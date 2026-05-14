@@ -452,6 +452,8 @@ let selectedBiz=[];
 let screen='home',xTab='sell',othersSubTab={},bizSubTab={};
 let cart={},xPay='Cash';
 let iFilter='All',revPer='Today',expandBiz=null,svcQ='';
+let sellCatFilter={}; // per-biz selected category pill
+let discount={}; // per-biz: {type:'fixed'|'pct', val:number}
 let todayRev={};
 let tempSelected=[],showBizSelector=false;
 let scanCtx='';
@@ -507,6 +509,14 @@ function loadData(){
     if(d.CLIENTS)CLIENTS=d.CLIENTS;
     if(d.todayRev)todayRev=d.todayRev;
     if(d.pinnedUnits)pinnedUnits=d.pinnedUnits;
+    // Migrate old expense entries that have no dateKey — stamp them as today
+    // since they were saved in localStorage they are from this session
+    const today=new Date().toDateString();
+    Object.keys(BIZ_EXPLOGS).forEach(k=>{
+      (BIZ_EXPLOGS[k]||[]).forEach(e=>{
+        if(!e.dateKey)e.dateKey=today;
+      });
+    });
     return true;
   }catch(e){
     console.warn('Load failed:',e);
@@ -524,7 +534,8 @@ const p=n=>{
   }
   return'₱'+v.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:5});
 };
-const ts=()=>new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});
+const ts=()=>new Date().toLocaleString('en-PH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+const dateKey=()=>new Date().toDateString(); // e.g. "Thu May 14 2026" — used for same-day filtering
 const uid=()=>Date.now()+Math.floor(Math.random()*9999);
 const txn=()=>'TXN-'+Date.now().toString().slice(-6);
 
@@ -538,7 +549,15 @@ function modal(html){rmModal();const d=document.createElement('div');d.className
 function rmModal(){const m=document.getElementById('_modal');if(m)m.remove();}
 function getBizInfo(key){return ALL_BIZ.find(b=>b.key===key);}
 function getRev(key){return todayRev[key]||0;}
-function getExp(key){return(BIZ_EXPLOGS[key]||[]).reduce((s,e)=>s+e.amount,0);}
+function getExp(key){
+  const today=dateKey();
+  const todayShort=new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric'});
+  return(BIZ_EXPLOGS[key]||[]).filter(e=>{
+    if(e.dateKey)return e.dateKey===today; // new entries — exact match
+    if(e.time)return e.time.startsWith(todayShort); // old entries — match by time prefix
+    return false;
+  }).reduce((s,e)=>s+e.amount,0);
+}
 function getBadge(key){if(key==='internet')return`${CLIENTS.filter(c=>c.status==='Unpaid').length} unpaid`;const b=getBizInfo(key);return b?.ready?'POS ready':'Coming soon';}
 
 function render(){
@@ -556,14 +575,14 @@ function render(){
 }
 
 function buildHome(){
-  const tot=selectedBiz.reduce((s,k)=>s+getRev(k),0);
+  const tot=selectedBiz.reduce((s,k)=>s+(getRev(k)-getExp(k)),0);
   const revenueRows=selectedBiz.length===0
     ?`<div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">Select businesses below to see revenue</div>`
-    :selectedBiz.map(k=>{const b=getBizInfo(k);const rev=getRev(k);return`<div class="brow" onclick="expandBiz=expandBiz==='${k}'?null:'${k}';render()"><div class="brow-inner"><span class="brow-name"><span style="font-size:10px">${expandBiz===k?'▾':'▸'}</span>${b?.name||k}</span><span class="brow-amt${rev===0?' zero':''}">${p(rev)}</span></div></div><div class="biz-exp${expandBiz===k?' open':''}"><div class="bei"><div class="bei-stats"><div class="er"><span class="er-l">Revenue</span><span class="er-g">${p(rev)}</span></div><div class="er"><span class="er-l">Expenses</span><span class="er-r">${p(getExp(k))}</span></div><div class="er"><span class="er-l">Net Profit</span><span class="${rev-getExp(k)>=0?'er-g':'er-r'}">${p(rev-getExp(k))}</span></div></div>${buildTrendline(k,revPer,rev)}</div></div>`;}).join('');
-  const revenueSection=`<div class="rev-scroll">${revenueRows}</div><div style="display:flex;justify-content:space-between;padding:8px 0 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px"><span style="font-size:12px;font-weight:700;color:var(--text-primary)">Total</span><span style="font-size:15px;font-weight:700;color:var(--success)">${p(tot)}</span></div>`;
+    :selectedBiz.map(k=>{const b=getBizInfo(k);const rev=getRev(k);const exp=getExp(k);const net=rev-exp;return`<div class="brow" onclick="expandBiz=expandBiz==='${k}'?null:'${k}';render()"><div class="brow-inner"><span class="brow-name"><span style="font-size:10px">${expandBiz===k?'▾':'▸'}</span>${b?.name||k}</span><span class="brow-amt${net===0?' zero':''}" style="${net<0?'color:var(--danger)':''}">${p(net)}</span></div></div><div class="biz-exp${expandBiz===k?' open':''}"><div class="bei"><div class="bei-stats"><div class="er"><span class="er-l">Revenue</span><span class="er-g">${p(rev)}</span></div><div class="er"><span class="er-l">Expenses</span><span class="er-r">${p(exp)}</span></div><div class="er"><span class="er-l">Net Profit</span><span class="${net>=0?'er-g':'er-r'}">${p(net)}</span></div></div>${buildTrendline(k,revPer,rev)}</div></div>`;}).join('');
+  const revenueSection=`<div class="rev-scroll">${revenueRows}</div><div style="display:flex;justify-content:space-between;padding:8px 0 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px"><span style="font-size:12px;font-weight:700;color:var(--text-primary)">Net Profit</span><span style="font-size:15px;font-weight:700;color:${tot>=0?'var(--success)':'var(--danger)'}">${p(tot)}</span></div>`;
   const bizCards=selectedBiz.map(k=>{const b=getBizInfo(k);if(!b)return'';return`<div class="bc-wrap"><div class="bc" onclick="goScreen('${k}')"><div class="bi">${b.icon}</div><div class="bn">${b.name}</div><div class="bb">${getBadge(k)}</div></div><button class="bc-remove" onclick="event.stopPropagation();confirmRemoveBiz('${k}')" title="Remove from hub">✕</button></div>`;}).join('');
-  if(selectedBiz.length===0){return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">REVENUE</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div><div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">No businesses yet</div></div><div class="empty-state"><div class="empty-icon">🏪</div><div class="empty-title">Set up your businesses</div><div class="empty-sub">Choose which business types you operate — each one comes with its own POS, inventory, and expense tracking built-in.</div><button class="setup-btn" onclick="openBizSelector()">＋ Select Your Businesses</button></div></div>`;}
-  return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">REVENUE</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div>${revenueSection}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="sl" style="margin:0">My Businesses</div><button class="add-svc-btn" onclick="openBizSelector()">＋ Add Business</button></div><div class="biz-grid-wrap"><div class="hg">${bizCards}</div></div></div>`;
+  if(selectedBiz.length===0){return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div><div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">No businesses yet</div></div><div class="empty-state"><div class="empty-icon">🏪</div><div class="empty-title">Set up your businesses</div><div class="empty-sub">Choose which business types you operate — each one comes with its own POS, inventory, and expense tracking built-in.</div><button class="setup-btn" onclick="openBizSelector()">＋ Select Your Businesses</button></div></div>`;}
+  return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div>${revenueSection}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="sl" style="margin:0">My Businesses</div><button class="add-svc-btn" onclick="openBizSelector()">＋ Add Business</button></div><div class="biz-grid-wrap"><div class="hg">${bizCards}</div></div></div>`;
 }
 
 function buildBizScreen(key){
@@ -583,12 +602,34 @@ function buildSell(key){
   initBizData(key);
   const prods=BIZ_PRODUCTS[key]||[];
   const sorted=[...prods].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
-  const filtered=sorted.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
+  if(!sellCatFilter[key])sellCatFilter[key]='All';
+  const activeCat=sellCatFilter[key];
+  const catFiltered=activeCat==='All'?sorted:sorted.filter(s=>s.category===activeCat);
+  const filtered=catFiltered.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
   if(!cart[key])cart[key]={};
   const items=Object.values(cart[key]);
   const tot=items.reduce((s,i)=>s+i.price*i.qty,0);
   const logs=BIZ_LOGS[key]||[];
   const cartCount=items.reduce((s,i)=>s+i.qty,0);
+
+  // Build category pills — only for xerox/printing
+  const CATEGORY_BIZ=['xerox'];
+  let catPillsHtml='';
+  if(CATEGORY_BIZ.includes(key)){
+    const cats=['All',...[...new Set(prods.map(p=>p.category).filter(Boolean))].sort()];
+    catPillsHtml=`<div style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;scrollbar-width:none;align-items:center">
+      ${cats.map(c=>{
+        const isAll=c==='All';
+        const isActive=activeCat===c;
+        const pill=`<button onclick="sellCatFilter['${key}']='${c.replace(/'/g,"\\'")}';updateCatFilter('${key}')"
+          style="flex-shrink:0;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:0.5px solid ${isActive?'var(--accent)':'var(--border-primary)'};background:${isActive?'var(--accent)':'var(--bg-primary)'};color:${isActive?'#fff':'var(--text-secondary)'};font-family:inherit;transition:none">${c}</button>`;
+        const dots=isAll?'':
+          `<button onclick="event.stopPropagation();openCatMenu('${key}','${c.replace(/'/g,"\\'")}',this)"
+            style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:16px;line-height:1;padding:2px 4px;margin-left:-4px" title="Category options">⋮</button>`;
+        return pill+dots;
+      }).join('')}
+    </div>`;
+  }
 
   // TOP — scrollable products area
   // FIX: search uses id="sell-search" and updateSearch(key) to avoid full re-render on input
@@ -613,25 +654,72 @@ function buildSell(key){
         <button class="add-svc-btn" onclick="openAddProduct('${key}')">＋ Add</button>
       </div>
     </div>
+    ${catPillsHtml}
     <div class="sg" id="sell-grid-${key}">
       ${buildProductGrid(key,filtered)}
     </div>
-    ${logs.length>0?`<div class="sl" style="margin-top:4px">Recent Log</div><div class="cb">${logs.slice().reverse().slice(0,5).map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${l.items.map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}</div>`:''}
+    ${logs.length>0?`<div class="sl" style="margin-top:4px">Recent Log</div><div class="cb" style="max-height:180px;overflow-y:auto">${logs.slice().reverse().slice(0,10).map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${l.items.map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}</div>`:''}
   `;
 
   // BOTTOM — pinned cart + payment
   // FIX: cart-body gets id="cart-body-{key}" so adjQty can patch it without full render
+  const d=discount[key]||{type:'fixed',val:''};
+  // Make sure discount state exists for this key
+  if(!discount[key])discount[key]={type:'fixed',val:'',open:false};
+  const rawTot=tot;
+  const finalTot=getDiscountedTotal(key,rawTot);
+  const discAmt=getDiscountAmt(key,rawTot);
+  const hasDiscount=discAmt>0;
+  const discOpen=!!(discount[key]&&discount[key].open);
+
+  const discRowHtml=`
+    <div id="disc-row-${key}" style="margin:4px 0 2px">
+      <button onclick="toggleDiscountRow('${key}')"
+        style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:0.5px solid var(--border-primary);border-radius:var(--radius-sm);padding:7px 10px;cursor:pointer;font-family:inherit;color:var(--text-secondary);font-size:11px;font-weight:600">
+        <span>🏷️ Add Discount</span>
+        <span style="font-size:14px;color:var(--accent)">${discOpen?'▲':'▼'}</span>
+      </button>
+      <div id="disc-panel-${key}" style="display:${discOpen?'block':'none'};background:var(--accent-light);border:0.5px solid var(--accent);border-radius:0 0 var(--radius-sm) var(--radius-sm);border-top:none;padding:10px">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <button data-disctype="fixed" onclick="setDiscType('${key}','fixed')" style="flex:1;padding:6px;border-radius:var(--radius-sm);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:0.5px solid ${d.type==='fixed'?'var(--accent)':'var(--border-primary)'};background:${d.type==='fixed'?'var(--accent)':'var(--bg-primary)'};color:${d.type==='fixed'?'#fff':'var(--text-secondary)'}">₱ Fixed Amount</button>
+          <button data-disctype="pct" onclick="setDiscType('${key}','pct')" style="flex:1;padding:6px;border-radius:var(--radius-sm);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:0.5px solid ${d.type==='pct'?'var(--accent)':'var(--border-primary)'};background:${d.type==='pct'?'var(--accent)':'var(--bg-primary)'};color:${d.type==='pct'?'#fff':'var(--text-secondary)'}">% Percent Off</button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="inp" type="number" style="margin:0;flex:1" id="disc-val-${key}"
+            placeholder="${d.type==='fixed'?'Final amount to charge (e.g. 450)':'Percent off (e.g. 2)'}"
+            value="${d.val||''}"
+            oninput="applyDiscount('${key}',this.value)">
+          <span style="font-size:13px;font-weight:700;color:var(--accent)">${d.type==='pct'?'%':'₱'}</span>
+          <button onclick="clearDiscount('${key}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;padding:0 2px" title="Clear discount">✕</button>
+        </div>
+        ${hasDiscount?`<div style="margin-top:8px;padding:6px 8px;background:var(--bg-primary);border-radius:var(--radius-sm);font-size:11px">
+          <div style="display:flex;justify-content:space-between;color:var(--text-secondary);margin-bottom:3px">
+            <span>Original total</span><span>${p(rawTot)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;color:var(--danger);margin-bottom:3px">
+            <span>Discount${d.type==='pct'?` (${d.val}%)`:`(fixed)`}</span><span>− ${p(discAmt)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-weight:800;font-size:13px;color:var(--success);border-top:0.5px solid var(--border-secondary);padding-top:4px;margin-top:2px">
+            <span>Amount Due</span><span>${p(finalTot)}</span>
+          </div>
+        </div>`:''}
+      </div>
+    </div>`;
+
   const bottomHtml=`
     <div class="cart-header" id="cart-header-${key}">
       <span class="sl" style="margin:0">Cart${cartCount>0?` <span class="cart-badge">${cartCount}</span>`:''}</span>
-      <span style="font-size:16px;font-weight:800;color:var(--text-primary)">${p(tot)}</span>
+      <span style="font-size:16px;font-weight:800;color:${hasDiscount?'var(--text-tertiary)':'var(--text-primary)'}${hasDiscount?';text-decoration:line-through':''}">
+        ${p(rawTot)}</span>
+      ${hasDiscount?`<span style="font-size:16px;font-weight:800;color:var(--success)">${p(finalTot)}</span>`:''}
     </div>
     <div class="cart-body" id="cart-body-${key}">${buildCartRows(key,items)}</div>
+    ${items.length>0?discRowHtml:''}
     <div class="pay-row">
       ${['Cash','GCash','Bank'].map(m=>`<div class="pp${xPay===m?' act':''}" onclick="xPay='${m}';render()">${m}</div>`).join('')}
     </div>
     <button class="bm" id="record-btn-${key}" ${items.length===0?'disabled':''} onclick="confirmSale('${key}')">
-      ${items.length===0?'Record Sale':'Record Sale — '+p(tot)+' via '+xPay}
+      ${items.length===0?'Record Sale':`Record Sale — ${p(finalTot)} via ${xPay}${hasDiscount?' 🏷️':''}`}
     </button>
     <div class="wn" style="margin-top:5px">→ Activepieces → SALES RECORDS</div>
   `;
@@ -659,12 +747,146 @@ function updateSearch(key,val){
   svcQ=val;
   const prods=BIZ_PRODUCTS[key]||[];
   const sorted=[...prods].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
-  const filtered=sorted.filter(s=>s.name.toLowerCase().includes(val.toLowerCase()));
+  const activeCat=sellCatFilter[key]||'All';
+  const catFiltered=activeCat==='All'?sorted:sorted.filter(s=>s.category===activeCat);
+  const filtered=catFiltered.filter(s=>s.name.toLowerCase().includes(val.toLowerCase()));
   const grid=document.getElementById('sell-grid-'+key);
   if(grid)grid.innerHTML=buildProductGrid(key,filtered);
 }
 
+// Category pill tap — re-render pills + grid without full page render
+function updateCatFilter(key){
+  render();
+}
+
+// 3-dots popover for a category pill
+let _catMenuEl=null;
+function openCatMenu(key,cat,btnEl){
+  // Close existing popover if any
+  if(_catMenuEl){_catMenuEl.remove();_catMenuEl=null;}
+  const menu=document.createElement('div');
+  menu.style.cssText='position:fixed;z-index:9999;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:160px;overflow:hidden;';
+  menu.innerHTML=`
+    <div onclick="rmCatMenu();editCategory('${key}','${cat.replace(/'/g,"\\'")}');event.stopPropagation()"
+      style="padding:11px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-primary);border-bottom:0.5px solid var(--border-secondary)"
+      onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">✏️ Edit Category</div>
+    <div onclick="rmCatMenu();confirmRemoveCat('${key}','${cat.replace(/'/g,"\\'")}');event.stopPropagation()"
+      style="padding:11px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--danger)"
+      onmouseover="this.style.background='var(--danger-light)'" onmouseout="this.style.background=''">🗑️ Remove Category</div>
+  `;
+  // Position near button
+  const r=btnEl.getBoundingClientRect();
+  menu.style.top=(r.bottom+4)+'px';
+  menu.style.left=Math.min(r.left,window.innerWidth-180)+'px';
+  document.body.appendChild(menu);
+  _catMenuEl=menu;
+  // Close on outside click
+  setTimeout(()=>document.addEventListener('click',rmCatMenu,{once:true}),10);
+}
+function rmCatMenu(){if(_catMenuEl){_catMenuEl.remove();_catMenuEl=null;}}
+
+// Edit category modal — rename + manage products inside
+function editCategory(key,cat){
+  const prods=(BIZ_PRODUCTS[key]||[]).filter(p=>p.category===cat);
+  const prodRows=prods.map(p=>`
+    <div id="ecp-row-${p.id}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;padding:8px;background:var(--bg-tertiary);border-radius:var(--radius-sm)">
+      <div style="flex:1;min-width:0">
+        <input class="inp" style="margin-bottom:4px;font-size:12px" value="${p.name.replace(/"/g,'&quot;')}" id="ecp-name-${p.id}" placeholder="Product name">
+        <div style="display:flex;gap:6px">
+          <input class="inp" type="number" style="margin-bottom:0;font-size:12px;flex:1" value="${p.price}" id="ecp-price-${p.id}" placeholder="Price ₱">
+          <span style="font-size:10px;color:var(--text-tertiary);align-self:center;white-space:nowrap">${p.unit}</span>
+        </div>
+      </div>
+      <button onclick="removeCatProduct('${key}',${p.id})" style="flex-shrink:0;background:none;border:0.5px solid var(--danger);color:var(--danger);border-radius:6px;padding:6px 8px;cursor:pointer;font-size:12px">✕</button>
+    </div>`).join('');
+  modal(`<div class="modal-t">✏️ Edit Category</div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:6px">Category name</div>
+    <input class="inp" id="ecat-name" value="${cat.replace(/"/g,'&quot;')}" placeholder="Category name">
+    <div style="font-size:11px;color:var(--text-secondary);margin:8px 0 6px">Products in this category (${prods.length})</div>
+    <div id="ecat-prod-list" style="max-height:240px;overflow-y:auto">${prodRows||'<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0">No products</div>'}</div>
+    <div style="background:var(--success-light);border:0.5px solid var(--success);border-radius:var(--radius-sm);padding:7px 10px;font-size:10px;color:var(--success);margin-top:8px">
+      ✅ Removing a product here only removes it from the Sell tab — your stock inventory stays untouched.
+    </div>
+    <div class="mbtnrow" style="margin-top:10px">
+      <button class="btn-c" onclick="rmModal()">Cancel</button>
+      <button class="btn-s" onclick="saveCatEdit('${key}','${cat.replace(/'/g,"\\'")}')">Save Changes</button>
+    </div>`);
+}
+
+// Remove a single product from within the edit category modal
+function removeCatProduct(key,prodId){
+  const row=document.getElementById('ecp-row-'+prodId);
+  if(row)row.remove();
+  // Mark for deletion (remove from BIZ_PRODUCTS immediately)
+  if(BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=BIZ_PRODUCTS[key].filter(p=>p.id!==prodId);
+  // Also remove from cart if present
+  if(cart[key]&&cart[key][prodId])delete cart[key][prodId];
+}
+
+// Save edits from the edit category modal
+function saveCatEdit(key,oldCat){
+  const newCat=(document.getElementById('ecat-name')?.value||'').trim();
+  if(!newCat){toast('Category name cannot be empty','err');return;}
+  const prods=BIZ_PRODUCTS[key]||[];
+  // Update each product's name, price, and category
+  prods.forEach(p=>{
+    if(p.category!==oldCat)return;
+    const nameEl=document.getElementById('ecp-name-'+p.id);
+    const priceEl=document.getElementById('ecp-price-'+p.id);
+    if(nameEl&&nameEl.value.trim())p.name=nameEl.value.trim();
+    if(priceEl&&parseFloat(priceEl.value)>0)p.price=parseFloat(priceEl.value);
+    p.category=newCat;
+  });
+  // If filter was on old category, update to new name
+  if(sellCatFilter[key]===oldCat)sellCatFilter[key]=newCat;
+  rmModal();render();setTimeout(()=>toast(`Category updated ✓`),50);
+}
+
+// Confirm before removing an entire category
+function confirmRemoveCat(key,cat){
+  const count=(BIZ_PRODUCTS[key]||[]).filter(p=>p.category===cat).length;
+  modal(`<div class="modal-t" style="color:var(--danger)">🗑️ Remove Category?</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;line-height:1.5">
+      Remove <strong>"${cat}"</strong> and all <strong>${count} product${count!==1?'s':''}</strong> from the Sell tab?<br>
+    </div>
+    <div style="background:var(--success-light);border:0.5px solid var(--success);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--success);margin-bottom:12px">
+      ✅ Your stock inventory will <strong>not</strong> be affected — only the sell listing is removed.
+    </div>
+    <div style="font-size:11px;color:var(--danger);margin-bottom:12px">This cannot be undone.</div>
+    <div class="mbtnrow">
+      <button class="btn-c" onclick="rmModal()">Cancel</button>
+      <button style="flex:1;padding:10px;background:var(--danger);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit" onclick="doRemoveCat('${key}','${cat.replace(/'/g,"\\'")}')">Yes, Remove</button>
+    </div>`);
+}
+
+// Actually remove category + all its products
+function doRemoveCat(key,cat){
+  if(!BIZ_PRODUCTS[key])return;
+  const toRemove=(BIZ_PRODUCTS[key]||[]).filter(p=>p.category===cat).map(p=>p.id);
+  BIZ_PRODUCTS[key]=BIZ_PRODUCTS[key].filter(p=>p.category!==cat);
+  // Remove from cart too
+  if(cart[key])toRemove.forEach(id=>{if(cart[key][id])delete cart[key][id];});
+  if(sellCatFilter[key]===cat)sellCatFilter[key]='All';
+  rmModal();render();setTimeout(()=>toast(`"${cat}" removed ✓`),50);
+}
+
 // FIX: Patch cart panel in-place — saves scroll position, no full render
+// Compute final total after discount
+function getDiscountedTotal(key,rawTot){
+  const d=discount[key];
+  if(!d||!d.val||d.val<=0)return rawTot;
+  if(d.type==='fixed'){
+    const fixed=parseFloat(d.val)||0;
+    return Math.max(0,fixed);
+  } else {
+    const pct=parseFloat(d.val)||0;
+    return Math.ceil(Math.max(0,rawTot-(rawTot*pct/100)));
+  }
+}
+function getDiscountAmt(key,rawTot){
+  return Math.max(0,rawTot-getDiscountedTotal(key,rawTot));
+}
+
 function patchCart(key){
   if(!cart[key])cart[key]={};
   const items=Object.values(cart[key]);
@@ -683,17 +905,52 @@ function patchCart(key){
   if(cb2)cb2.scrollTop=scrollTop;
 
   // Patch header total + badge
+  const rawTot=tot;
+  const finalTot=getDiscountedTotal(key,rawTot);
+  const hasDiscount=getDiscountAmt(key,rawTot)>0;
   const hdr=document.getElementById('cart-header-'+key);
-  if(hdr)hdr.innerHTML=`<span class="sl" style="margin:0">Cart${cartCount>0?` <span class="cart-badge">${cartCount}</span>`:''}</span><span style="font-size:16px;font-weight:800;color:var(--text-primary)">${p(tot)}</span>`;
+  if(hdr)hdr.innerHTML=`<span class="sl" style="margin:0">Cart${cartCount>0?` <span class="cart-badge">${cartCount}</span>`:''}</span><span style="font-size:16px;font-weight:800;color:${hasDiscount?'var(--text-tertiary)':'var(--text-primary)'}${hasDiscount?';text-decoration:line-through':''}">${p(rawTot)}</span>${hasDiscount?`<span style="font-size:16px;font-weight:800;color:var(--success)">${p(finalTot)}</span>`:''}`;
 
   // Patch record button
   const btn=document.getElementById('record-btn-'+key);
-  if(btn){btn.disabled=items.length===0;btn.textContent=items.length===0?'Record Sale':'Record Sale — '+p(tot)+' via '+xPay;}
+  if(btn){btn.disabled=items.length===0;btn.textContent=items.length===0?'Record Sale':`Record Sale — ${p(finalTot)} via ${xPay}${hasDiscount?' 🏷️':''}`;}
 
+  // Inject discount row if items exist but row isn't in DOM yet
+  if(items.length>0&&!document.getElementById('disc-row-'+key)){
+    const payRow=btn&&btn.previousElementSibling; // .pay-row is before button
+    if(payRow&&payRow.classList.contains('pay-row')){
+      const discDiv=document.createElement('div');
+      discDiv.id='disc-row-'+key;
+      discDiv.style.cssText='margin:4px 0 2px';
+      discDiv.innerHTML=`<button onclick="toggleDiscountRow('${key}')"
+        style="width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:0.5px solid var(--border-primary);border-radius:var(--radius-sm);padding:7px 10px;cursor:pointer;font-family:inherit;color:var(--text-secondary);font-size:11px;font-weight:600">
+        <span>🏷️ Add Discount</span><span style="font-size:14px;color:var(--accent)">▼</span></button>
+        <div id="disc-panel-${key}" style="display:none;background:var(--accent-light);border:0.5px solid var(--accent);border-radius:0 0 var(--radius-sm) var(--radius-sm);border-top:none;padding:10px">
+          <div style="display:flex;gap:6px;margin-bottom:8px">
+            <button data-disctype="fixed" onclick="setDiscType('${key}','fixed')" style="flex:1;padding:6px;border-radius:var(--radius-sm);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:0.5px solid var(--accent);background:var(--accent);color:#fff">₱ Fixed Amount</button>
+            <button data-disctype="pct" onclick="setDiscType('${key}','pct')" style="flex:1;padding:6px;border-radius:var(--radius-sm);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:0.5px solid var(--border-primary);background:var(--bg-primary);color:var(--text-secondary)">% Percent Off</button>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input class="inp" type="number" style="margin:0;flex:1" id="disc-val-${key}" placeholder="Final amount to charge (e.g. 450)" oninput="applyDiscount('${key}',this.value)">
+            <span style="font-size:13px;font-weight:700;color:var(--accent)">₱</span>
+            <button onclick="clearDiscount('${key}')" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:18px;padding:0 2px">✕</button>
+          </div>
+          <div class="disc-breakdown"></div>
+        </div>`;
+      payRow.parentNode.insertBefore(discDiv,payRow);
+    }
+  }
+  // Remove discount row if cart is empty
+  if(items.length===0){
+    const dr=document.getElementById('disc-row-'+key);
+    if(dr)dr.remove();
+  }
   // Also patch product grid to update "in cart" badges
   const prods=BIZ_PRODUCTS[key]||[];
   const sorted=[...prods].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
-  const filtered=sorted.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
+  const activeCat=sellCatFilter[key]||'All';
+  const catFiltered=activeCat==='All'?sorted:sorted.filter(s=>s.category===activeCat);
+  const filtered=catFiltered.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
   const grid=document.getElementById('sell-grid-'+key);
   if(grid)grid.innerHTML=buildProductGrid(key,filtered);
 }
@@ -772,6 +1029,11 @@ function buildStock(key){
       <div style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:8px">Selling price(s) — tap ＋ to add more styles</div>
       <div id="sell-rows-${key}"></div>
       <div id="sell-margin-${key}" style="font-size:10px;color:var(--text-tertiary);padding:2px 0;min-height:12px"></div>
+      <div style="margin-top:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--accent);margin-bottom:4px">Category <span style="font-weight:400;color:var(--text-tertiary)">(optional — groups products in sell tab)</span></div>
+        <input class="inp" id="sell-cat-${key}" list="sell-cat-list-${key}" placeholder="e.g. Printing, Lamination, ID & Photos..." style="margin-bottom:0" oninput="sellCatInput('${key}',this.value)">
+        <datalist id="sell-cat-list-${key}"></datalist>
+      </div>
     </div>
   </div>
   <button class="bm" onclick="doAddStock('${key}')" style="margin-top:8px">Add / Restock</button>
@@ -794,12 +1056,36 @@ function toggleAddToSell(key){
     // Reset sell rows for this key and render
     sellRows[key]=[{price:'',unit:getSelectedUnit(key)}];
     renderSellRows(key);
+    // Populate category datalist
+    populateCatDatalist(key);
+    // Auto-fill category if item already exists in sell tab
+    const name=document.getElementById('sn-'+key)?.value.trim();
+    if(name){
+      const existing=(BIZ_PRODUCTS[key]||[]).find(p=>p.name.toLowerCase()===name.toLowerCase());
+      if(existing&&existing.category){
+        const catEl=document.getElementById('sell-cat-'+key);
+        if(catEl)catEl.value=existing.category;
+      }
+    }
   }
+}
+
+// Populate datalist with existing categories for this biz
+function populateCatDatalist(key){
+  const dl=document.getElementById('sell-cat-list-'+key);
+  if(!dl)return;
+  const cats=[...new Set((BIZ_PRODUCTS[key]||[]).map(p=>p.category).filter(Boolean))].sort();
+  dl.innerHTML=cats.map(c=>`<option value="${c}">`).join('');
+}
+
+// Called when category input changes — update datalist
+function sellCatInput(key,val){
+  // Just keep it reactive; datalist handles suggestions
 }
 
 // Auto-add or update product in Sell tab
 // Each name+unit combo is a separate product entry
-function addToSellTab(key,name,sellPrice,unit){
+function addToSellTab(key,name,sellPrice,unit,category){
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
   const unitLabel=`per ${unit}`;
   // Match by BOTH name and unit — different units = different products
@@ -808,12 +1094,14 @@ function addToSellTab(key,name,sellPrice,unit){
   );
   if(existing){
     if(sellPrice>0)existing.price=sellPrice;
+    if(category)existing.category=category;
   } else {
     BIZ_PRODUCTS[key].push({
       id:uid(),name,
       price:sellPrice||0,
       cost:0,
       unit:unitLabel,
+      category:category||'',
       pinned:false,recipe:[],batchYield:1
     });
   }
@@ -1097,8 +1385,17 @@ function buildInventoryContent(key){
 }
 
 function buildExpensesContent(key){
-  const cats=ECATS_MAP[key]||['Supplies','Utilities','Other'];const myLogs=BIZ_EXPLOGS[key]||[];const total=myLogs.reduce((s,e)=>s+e.amount,0);
-  return`<div class="sr2"><div class="sc"><div class="slb">Today's Expenses</div><div class="sv r">${p(total)}</div></div><div class="sc"><div class="slb">Entries</div><div class="sv b">${myLogs.length}</div></div></div><div class="sl">📸 Scan Receipt</div><div class="cb"><div class="scan-row"><button class="scan-btn" onclick="openCamera('exp-${key}')">📷 Camera</button><button class="scan-btn" onclick="openFile('exp-${key}')">🖼️ Upload</button></div><div class="loading-bar" id="lb-exp-${key}"><div class="loading-bar-inner" id="lbi-exp-${key}"></div></div><div class="scan-result" id="sr-exp-${key}"><div class="scan-r-title">✏️ Review scanned expenses</div><div id="si-exp-${key}"></div><button class="bm" onclick="applyScanned('exp-${key}')">✓ Save All Expenses</button></div></div><div class="sl">Add Expense</div><div class="cb"><input class="inp" id="ed-${key}" placeholder="Description"><div class="ir"><input class="inp" id="ea-${key}" type="number" placeholder="Amount ₱" style="margin-bottom:0"><select class="inp" id="ec-${key}" style="margin-bottom:0">${cats.map(c=>`<option>${c}</option>`).join('')}</select></div><button class="bm" onclick="saveExp('${key}')" style="margin-top:7px">Save Expense</button><div class="wn">→ Activepieces → EXPENSES RECORDS</div></div>${myLogs.length>0?`<div class="sl">Today's Log</div><div class="cb">${myLogs.slice().reverse().map(e=>`<div class="li"><div class="lt"><span class="ln">${e.desc}</span><span class="la-r">${p(e.amount)}</span></div><div class="lm">${e.cat} · ${e.time}</div></div>`).join('')}</div>`:''}`;
+  const cats=ECATS_MAP[key]||['Supplies','Utilities','Other'];
+  const myLogs=BIZ_EXPLOGS[key]||[];
+  const today=dateKey();
+  const todayShort=new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric'});
+  const todayLogs=myLogs.filter(e=>{
+    if(e.dateKey)return e.dateKey===today;
+    if(e.time)return e.time.startsWith(todayShort);
+    return false;
+  });
+  const total=todayLogs.reduce((s,e)=>s+e.amount,0);
+  return`<div class="sr2"><div class="sc"><div class="slb">Today's Expenses</div><div class="sv r">${p(total)}</div></div><div class="sc"><div class="slb">Entries</div><div class="sv b">${todayLogs.length}</div></div></div><div class="sl">📸 Scan Receipt</div><div class="cb"><div class="scan-row"><button class="scan-btn" onclick="openCamera('exp-${key}')">📷 Camera</button><button class="scan-btn" onclick="openFile('exp-${key}')">🖼️ Upload</button></div><div class="loading-bar" id="lb-exp-${key}"><div class="loading-bar-inner" id="lbi-exp-${key}"></div></div><div class="scan-result" id="sr-exp-${key}"><div class="scan-r-title">✏️ Review scanned expenses</div><div id="si-exp-${key}"></div><button class="bm" onclick="applyScanned('exp-${key}')">✓ Save All Expenses</button></div></div><div class="sl">Add Expense</div><div class="cb"><input class="inp" id="ed-${key}" placeholder="Description"><div class="ir"><input class="inp" id="ea-${key}" type="number" placeholder="Amount ₱" style="margin-bottom:0"><select class="inp" id="ec-${key}" style="margin-bottom:0">${cats.map(c=>`<option>${c}</option>`).join('')}</select></div><button class="bm" onclick="saveExp('${key}')" style="margin-top:7px">Save Expense</button><div class="wn">→ Activepieces → EXPENSES RECORDS</div></div>${todayLogs.length>0?`<div class="sl">Today's Log</div><div class="cb">${todayLogs.slice().reverse().map(e=>`<div class="li"><div class="lt"><span class="ln">${e.desc}</span><span class="la-r">${p(e.amount)}</span></div><div class="lm">${e.cat}${e.auto?' · 🔄 auto':''} · ${e.time}</div></div>`).join('')}</div>`:'`'}`;
 }
 
 function buildInternetScreen(key,tab){
@@ -1162,7 +1459,25 @@ function addToCart(key,id){initBizData(key);if(!cart[key])cart[key]={};const pro
 function adjQty(key,id,d){if(!cart[key]||!cart[key][id])return;cart[key][id].qty+=d;if(cart[key][id].qty<=0)delete cart[key][id];if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
 function setQtyCart(key,id,v){const q=parseInt(v)||0;if(!cart[key])cart[key]={};if(q<=0){delete cart[key][id];}else{if(!cart[key][id]){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);cart[key][id]={...s,qty:0};}cart[key][id].qty=q;}if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
 function removeFromCart(key,id){if(!cart[key])return;delete cart[key][id];if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
-function confirmSale(key){if(!cart[key])return;const items=Object.values(cart[key]);if(!items.length)return;const total=items.reduce((s,i)=>s+i.price*i.qty,0);if(!BIZ_LOGS[key])BIZ_LOGS[key]=[];BIZ_LOGS[key].push({id:txn(),items:items.map(i=>({...i})),total,method:xPay,time:ts()});todayRev[key]=(todayRev[key]||0)+total;
+function confirmSale(key){
+  if(!cart[key])return;
+  const items=Object.values(cart[key]);
+  if(!items.length)return;
+  const rawTotal=items.reduce((s,i)=>s+i.price*i.qty,0);
+  const finalTotal=getDiscountedTotal(key,rawTotal);
+  const discAmt=getDiscountAmt(key,rawTotal);
+  const d=discount[key]||{};
+  if(!BIZ_LOGS[key])BIZ_LOGS[key]=[];
+  BIZ_LOGS[key].push({
+    id:txn(),
+    items:items.map(i=>({...i})),
+    total:finalTotal,
+    rawTotal:rawTotal,
+    discount:discAmt>0?{type:d.type,val:d.val,amt:discAmt}:null,
+    method:xPay,
+    time:ts()
+  });
+  todayRev[key]=(todayRev[key]||0)+finalTotal;
   // Per-unit deduction for non-perishable businesses (e.g. xerox)
   if(PERUNIT_BIZ.includes(key)){
     const prods=BIZ_PRODUCTS[key]||[];
@@ -1176,11 +1491,87 @@ function confirmSale(key){if(!cart[key])return;const items=Object.values(cart[ke
       }
     });
   }
-  cart[key]={};render();setTimeout(()=>toast(`Sale recorded — ${p(total)} via ${xPay} ✓`),50);}
+  cart[key]={};
+  discount[key]={type:'fixed',val:'',open:false};
+  render();
+  setTimeout(()=>toast(`Sale recorded — ${p(finalTotal)} via ${xPay}${discAmt>0?' (discount applied)':''} ✓`),50);
+}
 function togglePin(key,id){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;s.pinned=!s.pinned;render();toast(s.pinned?`"${s.name}" pinned ✓`:`"${s.name}" unpinned`);}
 function confirmRemoveProduct(key,id){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;modal(`<div class="modal-t">Remove Product?</div><div class="modal-sub">Remove "<strong>${s.name}</strong>" from the list?</div><div class="mbtnrow"><button class="btn-c" onclick="rmModal()">Cancel</button><button class="btn-d" onclick="doRemoveProduct('${key}',${id})">Yes, Remove</button></div>`);}
 function doRemoveProduct(key,id){BIZ_PRODUCTS[key]=(BIZ_PRODUCTS[key]||[]).filter(s=>s.id!==id);if(cart[key])delete cart[key][id];rmModal();render();setTimeout(()=>toast('Product removed'),50);}
-// ── Unit System ─────────────────────────────────────────────────
+// ── Discount Functions ────────────────────────────────────────────
+function toggleDiscountRow(key){
+  if(!discount[key])discount[key]={type:'fixed',val:'',open:false};
+  discount[key].open=!discount[key].open;
+  const panel=document.getElementById('disc-panel-'+key);
+  if(panel)panel.style.display=discount[key].open?'block':'none';
+  // flip the arrow
+  const btn=panel&&panel.previousElementSibling;
+  const arrow=btn&&btn.querySelector('span:last-child');
+  if(arrow)arrow.textContent=discount[key].open?'▲':'▼';
+}
+function setDiscType(key,type){
+  if(!discount[key])discount[key]={type,val:''};
+  discount[key].type=type;
+  discount[key].val='';
+  // Patch just the two type buttons without closing dropdown
+  const panel=document.getElementById('disc-panel-'+key);
+  if(panel){
+    const btns=panel.querySelectorAll('button[data-disctype]');
+    btns.forEach(b=>{
+      const isActive=b.dataset.disctype===type;
+      b.style.background=isActive?'var(--accent)':'var(--bg-primary)';
+      b.style.color=isActive?'#fff':'var(--text-secondary)';
+      b.style.border=`0.5px solid ${isActive?'var(--accent)':'var(--border-primary)'}`;
+    });
+    // Update input placeholder
+    const inp=document.getElementById('disc-val-'+key);
+    if(inp){inp.value='';inp.placeholder=type==='fixed'?'Final amount to charge (e.g. 450)':'Percent off (e.g. 2)';}
+    // Clear breakdown
+    const bd=panel.querySelector('.disc-breakdown');
+    if(bd)bd.innerHTML='';
+    // Reset header/button
+    const items=Object.values(cart[key]||{});
+    const rawTot=items.reduce((s,i)=>s+i.price*i.qty,0);
+    const hdr=document.getElementById('cart-header-'+key);
+    if(hdr)hdr.innerHTML=`<span class="sl" style="margin:0">Cart${items.length>0?` <span class="cart-badge">${items.reduce((s,i)=>s+i.qty,0)}</span>`:''}</span><span style="font-size:16px;font-weight:800;color:var(--text-primary)">${p(rawTot)}</span>`;
+    const btn=document.getElementById('record-btn-'+key);
+    if(btn&&items.length>0)btn.textContent=`Record Sale — ${p(rawTot)} via ${xPay}`;
+  }
+}
+function applyDiscount(key,val){
+  if(!discount[key])discount[key]={type:'fixed',val:''};
+  discount[key].val=val;
+  // Patch just the discount panel without full render
+  const items=Object.values(cart[key]||{});
+  const rawTot=items.reduce((s,i)=>s+i.price*i.qty,0);
+  const finalTot=getDiscountedTotal(key,rawTot);
+  const discAmt=getDiscountAmt(key,rawTot);
+  const d=discount[key];
+  const hasDiscount=discAmt>0;
+  // Update breakdown inside panel
+  const panel=document.getElementById('disc-panel-'+key);
+  if(panel){
+    // Update the breakdown div (last child of panel if it exists)
+    let breakdown=panel.querySelector('.disc-breakdown');
+    if(!breakdown){breakdown=document.createElement('div');breakdown.className='disc-breakdown';panel.appendChild(breakdown);}
+    breakdown.style.cssText='margin-top:8px;padding:6px 8px;background:var(--bg-primary);border-radius:var(--radius-sm);font-size:11px';
+    breakdown.innerHTML=hasDiscount?`
+      <div style="display:flex;justify-content:space-between;color:var(--text-secondary);margin-bottom:3px"><span>Original total</span><span>${p(rawTot)}</span></div>
+      <div style="display:flex;justify-content:space-between;color:var(--danger);margin-bottom:3px"><span>Discount${d.type==='pct'?` (${d.val}%)`:'(fixed)'}</span><span>− ${p(discAmt)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:800;font-size:13px;color:var(--success);border-top:0.5px solid var(--border-secondary);padding-top:4px;margin-top:2px"><span>Amount Due</span><span>${p(finalTot)}</span></div>`:'';
+  }
+  // Patch header and button
+  const cartCount=items.reduce((s,i)=>s+i.qty,0);
+  const hdr=document.getElementById('cart-header-'+key);
+  if(hdr)hdr.innerHTML=`<span class="sl" style="margin:0">Cart${cartCount>0?` <span class="cart-badge">${cartCount}</span>`:''}</span><span style="font-size:16px;font-weight:800;color:${hasDiscount?'var(--text-tertiary)':'var(--text-primary)'}${hasDiscount?';text-decoration:line-through':''}">${p(rawTot)}</span>${hasDiscount?`<span style="font-size:16px;font-weight:800;color:var(--success)">${p(finalTot)}</span>`:''}`;
+  const btn=document.getElementById('record-btn-'+key);
+  if(btn&&items.length>0)btn.textContent=`Record Sale — ${p(finalTot)} via ${xPay}${hasDiscount?' 🏷️':''}`;
+}
+function clearDiscount(key){
+  discount[key]={type:'fixed',val:'',open:false};
+  render();
+}
 // dim: weight | volume | count
 // toBase: conversion factor to base unit (g for weight, ml for volume, null=no standard)
 const UNITS={
@@ -1709,10 +2100,17 @@ function recordWaste(key,prodId,qty){
 
 function openAddProduct(key){
   const showCust=isCustomizeBiz(key);
+  const CATEGORY_BIZ=['xerox'];
+  const useCat=CATEGORY_BIZ.includes(key);
+  const cats=useCat?[...new Set((BIZ_PRODUCTS[key]||[]).map(p=>p.category).filter(Boolean))].sort():[];
+  const catDatalist=useCat?`<datalist id="ap-cat-list">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>`:'';
+  const thirdField=useCat
+    ?`${catDatalist}<input class="inp" id="ap-cat" list="ap-cat-list" placeholder="Category (e.g. Printing, Lamination, ID & Photos...)" style="margin-bottom:7px">`
+    :`<input class="inp" id="ap-unit" placeholder="Unit (per piece, per kilo...)" style="margin-bottom:7px">`;
   modal(`<div class="modal-t">Add New Product / Service</div>
     <input class="inp" id="ap-name" placeholder="Name">
     <input class="inp" id="ap-price" type="number" placeholder="Sell price ₱" style="margin-bottom:7px">
-    <input class="inp" id="ap-unit" placeholder="Unit (per piece, per kilo...)" style="margin-bottom:7px">
+    ${thirdField}
     ${showCust?`<button class="cust-btn" style="width:100%;justify-content:center;margin-bottom:4px" onclick="openCustFromAdd('${key}')">⚙️ Customize Ingredients</button>`:''}
     <div class="mbtnrow" style="margin-top:4px">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
@@ -1726,21 +2124,31 @@ function openCustFromAdd(key){
   const name=document.getElementById('ap-name')?.value.trim()||'New Product';
   const price=parseFloat(document.getElementById('ap-price')?.value)||0;
   const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
+  const category=(document.getElementById('ap-cat')?.value||'').trim();
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
-  // Check if product with same name already exists — reuse it instead of duplicating
   let prod=BIZ_PRODUCTS[key].find(p=>p.name.toLowerCase()===name.toLowerCase());
   if(!prod){
-    prod={id:uid(),name,price,cost:0,unit,pinned:false,recipe:[],batchYield:1};
+    prod={id:uid(),name,price,cost:0,unit,category,pinned:false,recipe:[],batchYield:1};
     BIZ_PRODUCTS[key].push(prod);
   } else {
-    // Update price/unit if user changed them
     if(price>0)prod.price=price;
     if(unit&&unit!=='per item')prod.unit=unit;
+    if(category)prod.category=category;
   }
   rmModal();
   setTimeout(()=>openCustomize(key,prod.id),80);
 }
-function saveNewProduct(key){const name=document.getElementById('ap-name')?.value.trim();const price=parseFloat(document.getElementById('ap-price')?.value)||0;const cost=parseFloat(document.getElementById('ap-cost')?.value)||0;const unit=document.getElementById('ap-unit')?.value.trim()||'per item';if(!name||price<=0){alert('Enter name and sell price');return;}if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];BIZ_PRODUCTS[key].push({id:uid(),name,price,cost,unit,pinned:false,recipe:[],batchYield:1});rmModal();render();setTimeout(()=>toast(`"${name}" added ✓`),50);}
+function saveNewProduct(key){
+  const name=document.getElementById('ap-name')?.value.trim();
+  const price=parseFloat(document.getElementById('ap-price')?.value)||0;
+  const cost=parseFloat(document.getElementById('ap-cost')?.value)||0;
+  const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
+  const category=(document.getElementById('ap-cat')?.value||'').trim();
+  if(!name||price<=0){alert('Enter name and sell price');return;}
+  if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
+  BIZ_PRODUCTS[key].push({id:uid(),name,price,cost,unit,category,pinned:false,recipe:[],batchYield:1});
+  rmModal();render();setTimeout(()=>toast(`"${name}" added ✓`),50);
+}
 function updPrice(key,id,v){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;const pr=parseFloat(v);if(!isNaN(pr)&&pr>0){s.price=pr;toast(`${s.name} → ${p(pr)} ✓`);}}
 function addViaPricing(key){const name=document.getElementById(`np-name-${key}`)?.value.trim();const cost=parseFloat(document.getElementById(`np-cost-${key}`)?.value)||0;const sell=parseFloat(document.getElementById(`np-sell-${key}`)?.value)||0;const unit=document.getElementById(`np-unit-${key}`)?.value.trim()||'per item';if(!name||sell<=0){toast('Enter name and sell price','err');return;}if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];BIZ_PRODUCTS[key].push({id:uid(),name,price:sell,cost,unit,pinned:false});render();setTimeout(()=>toast(`"${name}" added ✓`),50);}
 // ── Custom unit dropdown state ────────────────────────────────
@@ -1911,6 +2319,12 @@ function fillStockAC(key,stockId){
   if(costEl)costEl.value='';
   const container=document.getElementById('ac-'+key);
   if(container)container.innerHTML='';
+  // Auto-fill category if item has one in sell tab
+  const prod=(BIZ_PRODUCTS[key]||[]).find(p=>p.name.toLowerCase()===item.name.toLowerCase());
+  if(prod&&prod.category){
+    const catEl=document.getElementById('sell-cat-'+key);
+    if(catEl)catEl.value=prod.category;
+  }
 }
 function doAddStock(key){
   const name=document.getElementById('sn-'+key)?.value.trim();
@@ -1922,6 +2336,7 @@ function doAddStock(key){
   const specAmt=parseFloat(document.getElementById('spu-'+key)?.value)||0;
   const specBaseUnit=document.getElementById('spbu-'+key)?.value||'pc';
   const sellToSell=document.getElementById('sell-toggle-'+key)?.classList.contains('on')||false;
+  const sellCat=(document.getElementById('sell-cat-'+key)?.value||'').trim();
   const activeSellRows=sellToSell?(sellRows[key]||[]).filter(r=>parseFloat(r.price)>0):[];
   if(!name||qty<=0){toast('Enter item name and quantity','err');return;}
   if(!totalCost){toast('Enter total amount paid','err');return;}
@@ -1986,7 +2401,10 @@ function doAddStock(key){
     ex.stockUnit=stockUnit;
     if(hasSpec){ex.specAmt=specAmt;ex.specBaseUnit=specBaseUnit;}
     ex.lowUnit=lowUnit;
-    if(sellToSell)activeSellRows.forEach(r=>addToSellTab(key,ex.name,parseFloat(r.price),r.unit||stockUnit));
+    if(sellToSell)activeSellRows.forEach(r=>addToSellTab(key,ex.name,parseFloat(r.price),r.unit||stockUnit,sellCat));
+    // Auto-log as expense
+    if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
+    BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     render();
     setTimeout(()=>toast(`"${ex.name}" restocked +${qty} ${stockUnit} · WAC ${wacLabel} ✓`),50);
   } else {
@@ -2002,12 +2420,12 @@ function doAddStock(key){
       ${sellToSell&&sellSummary?`<div style="background:var(--success-light);border:0.5px solid var(--success);border-radius:var(--radius-sm);padding:8px;font-size:11px;color:var(--success);margin-top:6px">✓ Will add to Sell tab: ${sellSummary}</div>`:''}
       <div class="mbtnrow">
         <button class="btn-c" onclick="rmModal()">Cancel</button>
-        <button class="btn-s" onclick="saveNewItem('${key}',${finalQty},'${stockUnit}',${cost},${low},${specAmt},'${specBaseUnit}',${sellToSell?1:0})">Add to Inventory</button>
+        <button class="btn-s" onclick="saveNewItem('${key}',${finalQty},'${stockUnit}',${cost},${low},${specAmt},'${specBaseUnit}',${sellToSell?1:0},'${sellCat.replace(/'/g,"\\'")}')">Add to Inventory</button>
       </div>`);
   }
 }
 
-function saveNewItem(key,qty,stockUnit,cost,low,specAmt,specBaseUnit,sellWasOn){
+function saveNewItem(key,qty,stockUnit,cost,low,specAmt,specBaseUnit,sellWasOn,sellCat){
   const name=document.getElementById('ni-n')?.value.trim();
   const lo=parseInt(document.getElementById('ni-l')?.value)||low||2;
   if(!name){toast('Enter item name','err');return;}
@@ -2017,13 +2435,19 @@ function saveNewItem(key,qty,stockUnit,cost,low,specAmt,specBaseUnit,sellWasOn){
   BIZ_STOCKS[key].push(item);
   // Only add to sell tab if toggle was explicitly ON and rows have prices
   const rows=sellWasOn?(sellRows[key]||[]).filter(r=>parseFloat(r.price)>0):[];
-  rows.forEach(r=>addToSellTab(key,name,parseFloat(r.price),r.unit||stockUnit));
+  rows.forEach(r=>addToSellTab(key,name,parseFloat(r.price),r.unit||stockUnit,sellCat||''));
+  // Auto-log total cost as expense
+  const totalPaid=cost*(specAmt>0?qty*specAmt:qty);
+  if(totalPaid>0){
+    if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
+    BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalPaid,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
+  }
   rmModal();render();
   const costLabel=specAmt>0?`${p(cost)}/${specBaseUnit}`:`${p(cost)}/${stockUnit}`;
   const sellLabel=rows.length?` · ${rows.length} price(s) added to Sell tab ✓`:'';
   setTimeout(()=>toast(`"${name}" added — ${qty} ${stockUnit} · ${costLabel}${sellLabel}`),50);
 }
-function saveExp(key){const desc=document.getElementById('ed-'+key)?.value.trim();const amount=parseFloat(document.getElementById('ea-'+key)?.value)||0;const cat=document.getElementById('ec-'+key)?.value;if(!desc||amount<=0){toast('Fill description and amount','err');return;}if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];BIZ_EXPLOGS[key].push({id:uid(),desc,amount,cat,time:ts()});render();setTimeout(()=>toast(`Expense saved — ${p(amount)} ✓`),50);}
+function saveExp(key){const desc=document.getElementById('ed-'+key)?.value.trim();const amount=parseFloat(document.getElementById('ea-'+key)?.value)||0;const cat=document.getElementById('ec-'+key)?.value;if(!desc||amount<=0){toast('Fill description and amount','err');return;}if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];BIZ_EXPLOGS[key].push({id:uid(),desc,amount,cat,time:ts(),dateKey:dateKey()});render();setTimeout(()=>toast(`Expense saved — ${p(amount)} ✓`),50);}
 function logCS(){const desc=document.getElementById('csd')?.value.trim();const amount=parseFloat(document.getElementById('csa')?.value)||0;const method=document.getElementById('csm')?.value;if(!desc||amount<=0){toast('Fill all fields','err');return;}if(!BIZ_LOGS.cs)BIZ_LOGS.cs=[];BIZ_LOGS.cs.push({id:txn(),desc,total:amount,method,time:ts()});todayRev.cs=(todayRev.cs||0)+amount;render();setTimeout(()=>toast(`Recorded ${p(amount)} ✓`),50);}
 function logPV(){const machine=document.getElementById('pvm')?.value.trim();const coins=parseFloat(document.getElementById('pvc')?.value)||0;const load=parseFloat(document.getElementById('pvl')?.value)||0;if(!machine||coins<=0){toast('Fill machine and coins','err');return;}const net=coins-load;if(!BIZ_LOGS.pv)BIZ_LOGS.pv=[];BIZ_LOGS.pv.push({id:txn(),machine,coins,load,net,time:ts()});todayRev.pv=(todayRev.pv||0)+net;render();setTimeout(()=>toast(`Collected ${p(net)} net ✓`),50);}
 function markPaid(){const id=parseInt(document.getElementById('ic')?.value);if(!id){toast('Select a client','err');return;}const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;render();setTimeout(()=>toast(`${c.name} marked paid ✓`),50);}
