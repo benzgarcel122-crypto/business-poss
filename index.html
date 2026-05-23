@@ -644,7 +644,6 @@ function render(){
   if(screen==='home')body.innerHTML=buildHome();
   else body.innerHTML=buildBizScreen(screen);
   if(showBizSelector)injectBizSelector();
-  saveData();
 }
 
 function buildHome(){
@@ -1050,7 +1049,7 @@ function saveCatEdit(key,oldCat){
   });
   // If filter was on old category, update to new name
   if(sellCatFilter[key]===oldCat)sellCatFilter[key]=newCat;
-  rmModal();render();setTimeout(()=>toast(`Category updated ✓`),50);
+  saveData();rmModal();render();setTimeout(()=>toast(`Category updated ✓`),50);
 }
 
 // Confirm before removing an entire category
@@ -1078,7 +1077,7 @@ function doRemoveCat(key,cat){
   // Remove from cart too
   if(cart[key])toRemove.forEach(id=>{if(cart[key][id])delete cart[key][id];});
   if(sellCatFilter[key]===cat)sellCatFilter[key]='All';
-  rmModal();render();setTimeout(()=>toast(`"${cat}" removed ✓`),50);
+  saveData();rmModal();render();setTimeout(()=>toast(`"${cat}" removed ✓`),50);
 }
 
 // FIX: Patch cart panel in-place — saves scroll position, no full render
@@ -3369,10 +3368,10 @@ function saveCustomize(key,prodId){
   }
   if(isPerishable(key)&&recipe.length>0){
     deductRecipe(key,recipe,1);
-    rmModal();render();
+    saveData();rmModal();render();
     setTimeout(()=>toast(`Recipe saved — batch deducted from stock ✓`),50);
   } else {
-    rmModal();render();
+    saveData();rmModal();render();
     setTimeout(()=>toast(`Recipe saved for "${prod.name}" ✓`),50);
   }
   custCart={};
@@ -3546,10 +3545,10 @@ function saveNewProduct(key){
   if(!name||price<=0){alert('Enter name and sell price');return;}
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
   BIZ_PRODUCTS[key].push({id:uid(),name,price,cost,unit,category,pinned:false,recipe:[],batchYield:1});
-  rmModal();render();setTimeout(()=>toast(`"${name}" added ✓`),50);
+  saveData();rmModal();render();setTimeout(()=>toast(`"${name}" added ✓`),50);
 }
 function updPrice(key,id,v){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;const pr=parseFloat(v);if(!isNaN(pr)&&pr>0){s.price=pr;toast(`${s.name} → ${p(pr)} ✓`);}}
-function addViaPricing(key){const name=document.getElementById(`np-name-${key}`)?.value.trim();const cost=parseFloat(document.getElementById(`np-cost-${key}`)?.value)||0;const sell=parseFloat(document.getElementById(`np-sell-${key}`)?.value)||0;const unit=document.getElementById(`np-unit-${key}`)?.value.trim()||'per item';if(!name||sell<=0){toast('Enter name and sell price','err');return;}if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];BIZ_PRODUCTS[key].push({id:uid(),name,price:sell,cost,unit,pinned:false});render();setTimeout(()=>toast(`"${name}" added ✓`),50);}
+function addViaPricing(key){const name=document.getElementById(`np-name-${key}`)?.value.trim();const cost=parseFloat(document.getElementById(`np-cost-${key}`)?.value)||0;const sell=parseFloat(document.getElementById(`np-sell-${key}`)?.value)||0;const unit=document.getElementById(`np-unit-${key}`)?.value.trim()||'per item';if(!name||sell<=0){toast('Enter name and sell price','err');return;}if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];BIZ_PRODUCTS[key].push({id:uid(),name,price:sell,cost,unit,pinned:false});saveData();render();setTimeout(()=>toast(`"${name}" added ✓`),50);}
 // ── Custom unit dropdown state ────────────────────────────────
 let pinnedUnits=[]; // persists during session
 let stockUnitSel={}; // selected unit per biz key: stockUnitSel[key]='kg'
@@ -3615,12 +3614,12 @@ function toggleUDD(key){
     setTimeout(()=>{
       document.addEventListener('click',function closeUDD(e){
         const wrap=document.getElementById('udd-wrap-'+key);
-        if(wrap&&!wrap.contains(e.target)){
+        if(!wrap||!wrap.contains(e.target)){
           panel.style.display='none';
           trigger.classList.remove('open');
           document.removeEventListener('click',closeUDD);
         }
-      });
+      },{once:true});
     },10);
   }
 }
@@ -3878,7 +3877,7 @@ function doAddStock(key){
     BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
-    render();
+    saveData();render();
     setTimeout(()=>toast(`"${name}" restocked +${qty} ${stockUnit} · WAC ${wacLabel} ✓`),50);
   } else {
     const sellSummary=activeSellRows.length?activeSellRows.map(r=>`${p(parseFloat(r.price))}/${r.unit}`).join(', '):'';
@@ -3940,7 +3939,7 @@ function doAddStock_inner(key,name,qty,stockUnit,totalCost,low,lowUnit,specAmt,s
     BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
-    render();
+    saveData();render();
     setTimeout(()=>toast(`"${name}" restocked +${qty} ${stockUnit} · WAC ${wacLabel} ✓`),50);
   }
 }
@@ -3964,7 +3963,7 @@ function saveNewItem(key,qty,stockUnit,cost,low,specAmt,specBaseUnit,sellWasOn,s
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost:totalPaid,costPerUnit:safeRound(cost),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
   }
-  rmModal();render();
+  saveData();rmModal();render();
   const costLabel=specAmt>0?`${p(cost)}/${specBaseUnit}`:`${p(cost)}/${stockUnit}`;
   const sellLabel=rows.length?` · ${rows.length} price(s) added to Sell tab ✓`:'';
   setTimeout(()=>toast(`"${name}" added — ${qty} ${stockUnit} · ${costLabel}${sellLabel}`),50);
@@ -4071,7 +4070,7 @@ function confirmClearAll(){
   cart={};discount={};sellCatFilter={};sellRows={};
   isDark=false;
   document.documentElement.classList.remove('dark');
-  rmModal();render();
+  saveData();rmModal();render();
   setTimeout(()=>toast('All data cleared ✓'),50);
 }
 
@@ -4132,7 +4131,7 @@ function applyScanned(ctx){
     count++;
   });
   document.getElementById('sr-'+ctx).style.display='none';
-  render();
+  saveData();render();
   const note=isExp?'':' · ⚠️ Update costs via ✏️ in Stock tab';
   setTimeout(function(){toast(count+' item(s) saved ✓'+note);},50);
 }
