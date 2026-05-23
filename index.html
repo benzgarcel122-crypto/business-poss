@@ -634,6 +634,10 @@ function getExp(key){
 function getBadge(key){if(key==='internet')return`${CLIENTS.filter(c=>c.status==='Unpaid').length} unpaid`;const b=getBizInfo(key);return b?.ready?'POS ready':'Coming soon';}
 
 function render(){
+  // Safety cleanup — remove any stale overlays that could block all clicks
+  const staleModal=document.getElementById('_modal');
+  if(staleModal&&!staleModal.closest('#posBody'))staleModal.remove();
+  if(typeof _catMenuEl!=='undefined'&&_catMenuEl){_catMenuEl.remove();_catMenuEl=null;}
   const body=document.getElementById('posBody');const nav=document.getElementById('posNav');const tit=document.getElementById('topTitle');const sub=document.getElementById('topSub');
   const isMainBiz=selectedBiz.includes(screen)&&screen!=='home';
   nav.style.display=isMainBiz?'grid':'none';
@@ -2552,7 +2556,7 @@ function toggleBizSel(key){const idx=tempSelected.indexOf(key);if(idx>=0)tempSel
 function saveBizSelection(){selectedBiz=[...tempSelected];selectedBiz.forEach(k=>initBizData(k));saveData();closeBizSelector();render();setTimeout(()=>toast(`${selectedBiz.length} business${selectedBiz.length!==1?'es':''} saved ✓`),50);}
 function closeBizSelector(){showBizSelector=false;const o=document.getElementById('biz-sel-overlay');if(o)o.remove();}
 function confirmRemoveBiz(key){const b=getBizInfo(key);modal(`<div class="modal-t">Remove from Hub?</div><div class="modal-sub"><strong>${b?.name}</strong> will be removed.<br><br>✅ All data preserved. Re-add anytime to get records back.</div><div class="mbtnrow"><button class="btn-c" onclick="rmModal()">Cancel</button><button class="btn-d" onclick="doRemoveBiz('${key}')">Remove</button></div>`);}
-function doRemoveBiz(key){selectedBiz=selectedBiz.filter(k=>k!==key);rmModal();render();const b=getBizInfo(key);setTimeout(()=>toast(`${b?.name} removed — data preserved ✓`),50);}
+function doRemoveBiz(key){selectedBiz=selectedBiz.filter(k=>k!==key);saveData();rmModal();render();const b=getBizInfo(key);setTimeout(()=>toast(`${b?.name} removed — data preserved ✓`),50);}
 
 function toggleSaleModeDD(key){
   const dd=document.getElementById('sale-mode-dd-'+key);
@@ -4044,7 +4048,7 @@ function fillExpCat(key,cat,isNew){
   if(ac)ac.innerHTML='';
 }
 function saveExp(key){const desc=document.getElementById('ed-'+key)?.value.trim();const amount=parseFloat(document.getElementById('ea-'+key)?.value)||0;const cat=document.getElementById('ec-'+key)?.value.trim()||'Other';if(!desc||amount<=0){toast('Fill description and amount','err');return;}// Save new category if not already in list
-if(cat){const allCats=[...new Set([...(ECATS_MAP[key]||[]).concat(BIZ_EXP_CATS[key]||[])])];if(!allCats.includes(cat)){if(!BIZ_EXP_CATS[key])BIZ_EXP_CATS[key]=[];BIZ_EXP_CATS[key].push(cat);}}if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];BIZ_EXPLOGS[key].push({id:uid(),desc,amount,cat,time:ts(),dateKey:dateKey()});render();setTimeout(()=>toast(`Expense saved — ${p(amount)} ✓`),50);}
+if(cat){const allCats=[...new Set([...(ECATS_MAP[key]||[]).concat(BIZ_EXP_CATS[key]||[])])];if(!allCats.includes(cat)){if(!BIZ_EXP_CATS[key])BIZ_EXP_CATS[key]=[];BIZ_EXP_CATS[key].push(cat);}}if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];BIZ_EXPLOGS[key].push({id:uid(),desc,amount,cat,time:ts(),dateKey:dateKey()});saveData();render();setTimeout(()=>toast(`Expense saved — ${p(amount)} ✓`),50);}
 function logCS(){const desc=document.getElementById('csd')?.value.trim();const amount=parseFloat(document.getElementById('csa')?.value)||0;const method=document.getElementById('csm')?.value;if(!desc||amount<=0){toast('Fill all fields','err');return;}if(!BIZ_LOGS.cs)BIZ_LOGS.cs=[];BIZ_LOGS.cs.push({id:txn(),desc,total:amount,method,time:ts()});todayRev.cs=(todayRev.cs||0)+amount;saveData();render();setTimeout(()=>toast(`Recorded ${p(amount)} ✓`),50);}
 function logPV(){const machine=document.getElementById('pvm')?.value.trim();const coins=parseFloat(document.getElementById('pvc')?.value)||0;const load=parseFloat(document.getElementById('pvl')?.value)||0;if(!machine||coins<=0){toast('Fill machine and coins','err');return;}const net=coins-load;if(!BIZ_LOGS.pv)BIZ_LOGS.pv=[];BIZ_LOGS.pv.push({id:txn(),machine,coins,load,net,time:ts()});todayRev.pv=(todayRev.pv||0)+net;saveData();render();setTimeout(()=>toast(`Collected ${p(net)} net ✓`),50);}
 function markPaid(){const id=parseInt(document.getElementById('ic')?.value);if(!id){toast('Select a client','err');return;}const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;saveData();render();setTimeout(()=>toast(`${c.name} marked paid ✓`),50);}
