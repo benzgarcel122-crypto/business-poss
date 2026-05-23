@@ -2112,16 +2112,10 @@ function buildReceiptHtml(biz,log,key){
         SIGNATURE&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:160px">&nbsp;</span>
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button id="btn-save-receipt-${key}" style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;-webkit-appearance:none"
-        onclick="doPrintReceipt('${uid}','${key}')">
-        🖨️ Save as PDF
-      </button>
-      <button id="btn-print-receipt-${key}" style="flex:1;padding:13px;font-size:14px;font-weight:700;background:${localStorage.getItem('lastReceipt_'+key)?'#1a6f3c':'#888'};color:#fff;border:none;border-radius:8px;font-family:inherit;-webkit-appearance:none;${localStorage.getItem('lastReceipt_'+key)?'cursor:pointer':'cursor:not-allowed;opacity:0.55'}"
-        onclick="doOpenPrint('${key}')" ${localStorage.getItem('lastReceipt_'+key)?'':'disabled'}>
-        🖨️ Print
-      </button>
-    </div>`;
+    <button style="width:100%;margin-top:10px;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;-webkit-appearance:none"
+      onclick="doPrintReceipt('${uid}','${key}')">
+      🖨️ Print
+    </button>`;
 }
 
 function doPrintReceipt(soldToId,key){
@@ -2181,22 +2175,9 @@ ${discountLine}
   try{localStorage.setItem('lastReceipt_'+aKey,html);}catch(e){toast('Could not save receipt — storage full','err');return;}
 
   // Unlock the Print button
-  const printBtn=document.getElementById('btn-print-receipt-'+aKey);
-  if(printBtn){
-    printBtn.disabled=false;
-    printBtn.style.background='#1a6f3c';
-    printBtn.style.cursor='pointer';
-    printBtn.style.opacity='1';
-  }
-
-  toast('Receipt saved — click Print to open & print ✓');
-}
-
-function doOpenPrint(key){
-  const html=localStorage.getItem('lastReceipt_'+key);
-  if(!html){toast('No saved receipt — click Save as PDF first','err');return;}
+  // Open print window immediately
   const w=window.open('about:blank','_blank');
-  if(!w){toast('Pop-up blocked — allow pop-ups for this site and try again','err');return;}
+  if(!w){toast('Pop-up blocked — allow pop-ups for this site','err');return;}
   w.document.open();
   w.document.write(html);
   w.document.close();
