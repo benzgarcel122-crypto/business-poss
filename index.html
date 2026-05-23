@@ -310,10 +310,12 @@ select.inp{appearance:auto}
 @media(max-width:380px){.hg{grid-template-columns:repeat(2,1fr)}}
 @media(min-width:600px){.pw{padding:24px}.pa{height:calc(100vh - 48px)}.hg{grid-template-columns:repeat(4,1fr)}}
 @media print{
-  body *{visibility:hidden!important}
-  #print-receipt-area,#print-receipt-area *{visibility:visible!important}
-  #print-receipt-area{position:fixed!important;top:0!important;left:0!important;width:100%!important;padding:24px!important;background:#fff!important}
-  @page{margin:12mm}
+  @page{margin:10mm;size:A4}
+  body>*{display:none!important}
+  #print-receipt-area{display:block!important;position:static!important;width:100%!important;padding:0!important;border:none!important;background:#fff!important;color:#000!important;font-family:Arial,sans-serif!important}
+  #print-receipt-area *{visibility:visible!important;color:#000!important}
+  button{display:none!important}
+  .pnav,.ptb,.pa,.modal-overlay{display:none!important}
 }
 .receipt-table{width:100%;border-collapse:collapse;margin:10px 0}
 .receipt-table th,.receipt-table td{border:1px solid #333;padding:5px 7px;text-align:center;font-size:12px}
@@ -495,6 +497,7 @@ let saleMode={}; // per-key: 'sale' or 'credit'
 // Reserved when item added to cart, released on remove/clear, cleared on sale
 let stockReservations={};
 let iFilter='All',revPer='Today',expandBiz=null,svcQ='';
+let repPer={}; // per-biz report filter: 'Today'|'Monthly'|'Yearly'
 let sellCatFilter={}; // per-biz selected category pill
 let discount={}; // per-biz: {type:'fixed'|'pct', val:number}
 let todayRev={};
@@ -1928,33 +1931,87 @@ function buildExpensesContent(key){
 
 // ── 📊 END OF DAY REPORT ─────────────────────────────────────────
 function buildReportsContent(key){
+  const per=repPer[key]||'Today';
   const logs=BIZ_LOGS[key]||[];
+  const explogs=BIZ_EXPLOGS[key]||[];
+  const now=new Date();
   const today=dateKey();
-  const todayShort=new Date().toLocaleDateString('en-PH',{month:'short',day:'numeric'});
-  const todayLogs=logs.filter(l=>{
-    if(l.dateKey)return l.dateKey===today;
-    if(l.time)return l.time.startsWith(todayShort);
-    return false;
-  });
-  const rev=getRev(key);
-  const exp=getExp(key);
+  const todayShort=now.toLocaleDateString('en-PH',{month:'short',day:'numeric'});
+  const curMonth=now.getMonth();
+  const curYear=now.getFullYear();
+
+  // Filter logs by period
+  function logsForPer(){
+    if(per==='Today') return logs.filter(l=>{
+      if(l.dateKey)return l.dateKey===today;
+      if(l.time)return l.time.startsWith(todayShort);
+      return false;
+    });
+    if(per==='Monthly') return logs.filter(l=>{
+      const d=l.dateKey?new Date(l.dateKey):null;
+      return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;
+    });
+    // Yearly
+    return logs.filter(l=>{
+      const d=l.dateKey?new Date(l.dateKey):null;
+      return d&&d.getFullYear()===curYear;
+    });
+  }
+
+  // Filter expenses by period
+  function expForPer(){
+    if(per==='Today') return explogs.filter(e=>{
+      if(e.dateKey)return e.dateKey===today;
+      if(e.time)return e.time.startsWith(todayShort);
+      return false;
+    });
+    if(per==='Monthly') return explogs.filter(e=>{
+      const d=e.dateKey?new Date(e.dateKey):null;
+      return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;
+    });
+    return explogs.filter(e=>{
+      const d=e.dateKey?new Date(e.dateKey):null;
+      return d&&d.getFullYear()===curYear;
+    });
+  }
+
+  const filteredLogs=logsForPer();
+  const filteredExp=expForPer();
+
+  // Revenue: for Today use todayRev (already tracked), for Monthly/Yearly sum from logs
+  const rev=per==='Today'
+    ?getRev(key)
+    :filteredLogs.reduce((s,l)=>s+(l.total||0),0);
+  const exp=filteredExp.reduce((s,e)=>s+e.amount,0);
   const net=rev-exp;
-  const txnCount=todayLogs.length;
+  const txnCount=filteredLogs.length;
   const avgSale=txnCount>0?rev/txnCount:0;
+
   // Top products
   const prodSales={};
-  todayLogs.forEach(l=>(l.items||[]).forEach(i=>{
+  filteredLogs.forEach(l=>(l.items||[]).forEach(i=>{
     prodSales[i.name]=(prodSales[i.name]||0)+i.qty;
   }));
   const topProds=Object.entries(prodSales).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
   // Payment breakdown
   const byMethod={Cash:0,GCash:0,Bank:0};
-  todayLogs.forEach(l=>{if(l.method)byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
-  const now=new Date().toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  filteredLogs.forEach(l=>{if(l.method)byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
+
+  const periodLabel=per==='Today'?`Today — ${todayShort}`:per==='Monthly'?`${now.toLocaleString('en-PH',{month:'long',year:'numeric'})}`:String(curYear);
+  const reportTitle=per==='Today'?'📊 End of Day Report':per==='Monthly'?'📊 Monthly Report':'📊 Yearly Report';
+  const nowStr=now.toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
   return`
     <div class="cb" style="margin-bottom:8px">
-      <div style="font-size:13px;font-weight:800;color:var(--text-primary);margin-bottom:2px">📊 End of Day Report</div>
-      <div style="font-size:10px;color:var(--text-tertiary)">${now}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-size:13px;font-weight:800;color:var(--text-primary)">${reportTitle}</div>
+        <select class="inp" style="width:auto;padding:4px 8px;font-size:12px;margin:0"
+          onchange="repPer['${key}']=this.value;render()">
+          ${['Today','Monthly','Yearly'].map(x=>`<option${per===x?' selected':''}>${x}</option>`).join('')}
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--text-tertiary)">${periodLabel} · Generated ${nowStr}</div>
     </div>
     <div class="sr2" style="margin-bottom:8px">
       <div class="sc"><div class="slb">Revenue</div><div class="sv g">${p(rev)}</div></div>
@@ -1973,9 +2030,9 @@ function buildReportsContent(key){
       ${Object.entries(byMethod).map(([m,v])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:0.5px solid var(--border-secondary);font-size:12px"><span style="color:var(--text-secondary);font-weight:600">${m}</span><span style="font-weight:700;color:var(--text-primary)">${p(v)}</span></div>`).join('')}
     </div>
     ${topProds.length>0?`<div class="sl">🏆 Top Products</div><div class="cb" style="margin-bottom:8px">${topProds.map(([name,qty],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border-secondary);font-size:12px"><span style="color:var(--text-secondary);font-weight:600">${i+1}. ${name}</span><span style="font-weight:700;color:var(--accent)">×${qty} sold</span></div>`).join('')}</div>`:''}
-    <div class="sl">📋 All Transactions Today (${txnCount})</div>
+    <div class="sl">📋 Transactions (${txnCount})</div>
     <div class="cb" style="max-height:220px;overflow-y:auto">
-      ${txnCount===0?'<div class="le">No transactions today</div>':todayLogs.slice().reverse().map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}
+      ${txnCount===0?`<div class="le">No transactions for this period</div>`:filteredLogs.slice().reverse().map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}
     </div>`;
 }
 
@@ -2028,7 +2085,7 @@ function buildReceiptHtml(biz,log,key){
   }
   const uid=`receipt-soldto-${key||'x'}`;
   return`
-    <div id="print-receipt-area" style="background:#fff;color:#000;font-family:Arial,sans-serif;padding:16px;border:0.5px solid var(--border-secondary);border-radius:var(--radius)">
+    <div id="print-receipt-area" data-logid="${log.id||''}" data-key="${key||''}" style="background:#fff;color:#000;font-family:Arial,sans-serif;padding:16px;border:0.5px solid var(--border-secondary);border-radius:var(--radius)">
       <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.04em;margin-bottom:14px;text-transform:uppercase">BUSINESS NAME</div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px;font-size:13px">
         Date&nbsp;<span style="border-bottom:1px solid #333;min-width:110px;display:inline-block;padding:0 4px">${dateStr}</span>
@@ -2054,69 +2111,96 @@ function buildReceiptHtml(biz,log,key){
       <div style="text-align:center;margin-top:18px;font-size:13px">
         SIGNATURE&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:160px">&nbsp;</span>
       </div>
-      <div style="margin-top:14px">
-        <button onclick="doPrintReceipt('${uid}')"
-          style="width:100%;padding:12px;font-size:14px;font-weight:700;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit">
-          🖨️ Print / Save as PDF
-        </button>
-      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="btn-save-receipt-${key}" style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;-webkit-appearance:none"
+        onclick="doPrintReceipt('${uid}','${key}')">
+        🖨️ Save as PDF
+      </button>
+      <button id="btn-print-receipt-${key}" style="flex:1;padding:13px;font-size:14px;font-weight:700;background:${localStorage.getItem('lastReceipt_'+key)?'#1a6f3c':'#888'};color:#fff;border:none;border-radius:8px;font-family:inherit;-webkit-appearance:none;${localStorage.getItem('lastReceipt_'+key)?'cursor:pointer':'cursor:not-allowed;opacity:0.55'}"
+        onclick="doOpenPrint('${key}')" ${localStorage.getItem('lastReceipt_'+key)?'':'disabled'}>
+        🖨️ Print
+      </button>
     </div>`;
 }
 
-function doPrintReceipt(soldToId){
+function doPrintReceipt(soldToId,key){
   const soldToEl=document.getElementById(soldToId);
   const soldToName=soldToEl?soldToEl.value.trim():'';
-
   const area=document.getElementById('print-receipt-area');
-  if(!area){alert('No receipt loaded.');return;}
+  if(!area){toast('No receipt loaded','err');return;}
 
   const d=new Date();
   const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
-
   const table=area.querySelector('table');
   const tableHTML=table?table.outerHTML:'';
   const paymentEl=area.querySelector('[data-payment]');
   const paymentText=paymentEl?paymentEl.textContent.trim():'';
-  const discountEl=area.querySelector('[data-discount]');
-  const discountLine=discountEl?`<div class="discount">Discount: ${discountEl.textContent.trim()}</div>`:'';
 
-  const printHTML=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title><style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:Arial,sans-serif;font-size:13px;color:#000;background:#fff;padding:20px 28px}
-  h1{text-align:center;font-size:17px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:14px}
-  .date-row{display:flex;justify-content:flex-end;margin-bottom:8px}
-  .date-val{border-bottom:1px solid #333;min-width:120px;display:inline-block;padding:0 4px}
-  .soldto-row{margin-bottom:10px}
-  .soldto-val{border-bottom:1px solid #333;min-width:180px;display:inline-block;padding:0 4px}
-  table{width:100%;border-collapse:collapse;margin:8px 0}
-  th,td{border:1px solid #333;padding:5px 7px;text-align:center;font-size:12px}
-  th{font-weight:700;background:#f0f0f0}
-  .discount{text-align:right;font-size:12px;color:#c00;margin-top:4px}
-  .payment{text-align:right;font-size:12px;color:#555;margin-top:4px}
-  .sig-row{text-align:center;margin-top:22px}
-  .sig-line{border-bottom:1px solid #333;display:inline-block;min-width:180px}
-  @media print{@page{margin:10mm}button{display:none}}
-  </style></head><body>
-  <h1>BUSINESS NAME</h1>
-  <div class="date-row">Date&nbsp;<span class="date-val">${dateStr}</span></div>
-  <div class="soldto-row">SOLD TO&nbsp;<span class="soldto-val">${soldToName}</span></div>
-  ${tableHTML}
-  ${discountLine}
-  <div class="payment">Payment: ${paymentText}</div>
-  <div class="sig-row">SIGNATURE&nbsp;<span class="sig-line">&nbsp;</span></div>
-  <script>window.onload=function(){window.print();}<\/script>
-  </body></html>`;
+  // Read discount from the live log data via data-logid attribute on the receipt area
+  const logId=area.getAttribute('data-logid');
+  const aKey=key||area.getAttribute('data-key');
+  const log=logId&&aKey?(BIZ_LOGS[aKey]||[]).find(l=>String(l.id)===String(logId)):null;
+  const disc=log&&log.discount&&log.discount.amt>0?log.discount:null;
+  const discountLine=disc
+    ?`<div style="text-align:right;font-size:10px;color:#c00;margin-top:3px">Discount (${disc.type==='pct'?disc.val+'%':'fixed'}): −₱${(disc.amt||0).toFixed(2)}</div>`
+    :'';
 
-  const iframe=document.createElement('iframe');
-  iframe.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;border:none;opacity:0;pointer-events:none';
-  iframe.srcdoc=printHTML;
-  document.body.appendChild(iframe);
-  setTimeout(()=>{
-    try{iframe.contentWindow.focus();}catch(e){}
-    setTimeout(()=>document.body.removeChild(iframe),3000);
-  },600);
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt ${dateStr}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:11px;color:#000;background:#fff;width:80mm;padding:6mm 5mm}
+h1{text-align:center;font-size:13px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;margin-bottom:8px}
+.date-row{display:flex;justify-content:flex-end;margin-bottom:5px;font-size:10px}
+.date-val{border-bottom:1px solid #333;min-width:70px;display:inline-block;padding:0 3px}
+.soldto-row{margin-bottom:7px;font-size:10px}
+.soldto-val{border-bottom:1px solid #333;min-width:100px;display:inline-block;padding:0 3px}
+table{width:100%;border-collapse:collapse;margin:5px 0}
+th,td{border:1px solid #333;padding:3px 4px;text-align:center;font-size:10px}
+th{font-weight:700;background:#f0f0f0;font-size:9px}
+.payment{text-align:right;font-size:10px;color:#555;margin-top:3px}
+.sig-row{text-align:center;margin-top:14px;font-size:10px}
+.sig-line{border-bottom:1px solid #333;display:inline-block;min-width:120px}
+@media print{
+  @page{size:80mm auto;margin:0}
+  body{width:80mm;padding:5mm 4mm}
+}
+</style></head>
+<body>
+<h1>BUSINESS NAME</h1>
+<div class="date-row">Date&nbsp;<span class="date-val">${dateStr}</span></div>
+<div class="soldto-row">SOLD TO&nbsp;<span class="soldto-val">${soldToName}</span></div>
+${tableHTML}
+${discountLine}
+<div class="payment">Payment: ${paymentText}</div>
+<div class="sig-row">SIGNATURE&nbsp;<span class="sig-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+
+  // Save to localStorage — overwrites previous, one receipt per biz key
+  try{localStorage.setItem('lastReceipt_'+aKey,html);}catch(e){toast('Could not save receipt — storage full','err');return;}
+
+  // Unlock the Print button
+  const printBtn=document.getElementById('btn-print-receipt-'+aKey);
+  if(printBtn){
+    printBtn.disabled=false;
+    printBtn.style.background='#1a6f3c';
+    printBtn.style.cursor='pointer';
+    printBtn.style.opacity='1';
+  }
+
+  toast('Receipt saved — click Print to open & print ✓');
 }
 
+function doOpenPrint(key){
+  const html=localStorage.getItem('lastReceipt_'+key);
+  if(!html){toast('No saved receipt — click Save as PDF first','err');return;}
+  const w=window.open('about:blank','_blank');
+  if(!w){toast('Pop-up blocked — allow pop-ups for this site and try again','err');return;}
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
 function loadReceiptInTab(key,mode){
   const logs=BIZ_LOGS[key]||[];
   const biz=getBizInfo(key);
@@ -2327,11 +2411,13 @@ function doPartialPay(key,id){
     c.status='paid';
     c.paidTime=ts();
     rmModal();
+    saveData();
     render();
     restoreCreditSearch(key);
     setTimeout(()=>toast(`${c.name} fully paid — ${p(actual)} added to revenue ✓`),50);
   } else {
     rmModal();
+    saveData();
     render();
     restoreCreditSearch(key);
     setTimeout(()=>toast(`${p(actual)} recorded · ${c.name} still owes ${p(c.amount-c.amountPaid)} ✓`),50);
@@ -2360,6 +2446,7 @@ function markCreditPaid(key,id){
   c.amountPaid=c.amount;
   c.status='paid';
   c.paidTime=ts();
+  saveData();
   render();
   restoreCreditSearch(key);
   setTimeout(()=>toast(`${c.name} marked as paid — ${p(remaining)} added to revenue ✓`),50);
@@ -2482,7 +2569,7 @@ function renderBizList(q){
   if(saveBtn)saveBtn.disabled=tempSelected.length===0;
 }
 function toggleBizSel(key){const idx=tempSelected.indexOf(key);if(idx>=0)tempSelected.splice(idx,1);else tempSelected.push(key);renderBizList(document.getElementById('biz-srch-inp')?.value||'');}
-function saveBizSelection(){selectedBiz=[...tempSelected];selectedBiz.forEach(k=>initBizData(k));closeBizSelector();render();setTimeout(()=>toast(`${selectedBiz.length} business${selectedBiz.length!==1?'es':''} saved ✓`),50);}
+function saveBizSelection(){selectedBiz=[...tempSelected];selectedBiz.forEach(k=>initBizData(k));saveData();closeBizSelector();render();setTimeout(()=>toast(`${selectedBiz.length} business${selectedBiz.length!==1?'es':''} saved ✓`),50);}
 function closeBizSelector(){showBizSelector=false;const o=document.getElementById('biz-sel-overlay');if(o)o.remove();}
 function confirmRemoveBiz(key){const b=getBizInfo(key);modal(`<div class="modal-t">Remove from Hub?</div><div class="modal-sub"><strong>${b?.name}</strong> will be removed.<br><br>✅ All data preserved. Re-add anytime to get records back.</div><div class="mbtnrow"><button class="btn-c" onclick="rmModal()">Cancel</button><button class="btn-d" onclick="doRemoveBiz('${key}')">Remove</button></div>`);}
 function doRemoveBiz(key){selectedBiz=selectedBiz.filter(k=>k!==key);rmModal();render();const b=getBizInfo(key);setTimeout(()=>toast(`${b?.name} removed — data preserved ✓`),50);}
@@ -2600,6 +2687,7 @@ function confirmSale(key){
   // Clear reservations for this business — permanent deduction already handled above
   stockReservations[key]={};
   discount[key]={type:'fixed',val:'',open:false};
+  saveData();
   render();
   setTimeout(()=>toast(`Sale recorded — ${p(finalTotal)} via ${xPay}${discAmt>0?' (discount applied)':''} ✓`),50);
 }
@@ -2652,17 +2740,31 @@ function confirmCreditSale(key){
     time:ts(),
     dateKey:dateKey()
   });
+  // Also push to BIZ_LOGS so it appears in Recent Log and Reports
+  if(!BIZ_LOGS[key])BIZ_LOGS[key]=[];
+  BIZ_LOGS[key].push({
+    id:txn(),
+    items:items.map(i=>({...i})),
+    total:0,
+    rawTotal:finalTotal,
+    discount:discAmt>0?{type:d.type,val:d.val,amt:discAmt}:null,
+    method:'Credit/Utang',
+    creditName:custName,
+    time:ts(),
+    dateKey:dateKey()
+  });
   // Clear cart and reservations
   cart[key]={};
   stockReservations[key]={};
   discount[key]={type:'fixed',val:'',open:false};
   saleMode[key]='sale';
+  saveData();
   render();
   setTimeout(()=>toast(`Credit recorded — ${custName} owes ${p(finalTotal)} ✓`),50);
 }
-function togglePin(key,id){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;s.pinned=!s.pinned;render();toast(s.pinned?`"${s.name}" pinned ✓`:`"${s.name}" unpinned`);}
+function togglePin(key,id){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;s.pinned=!s.pinned;saveData();render();toast(s.pinned?`"${s.name}" pinned ✓`:`"${s.name}" unpinned`);}
 function confirmRemoveProduct(key,id){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;modal(`<div class="modal-t">Remove Product?</div><div class="modal-sub">Remove "<strong>${s.name}</strong>" from the list?</div><div class="mbtnrow"><button class="btn-c" onclick="rmModal()">Cancel</button><button class="btn-d" onclick="doRemoveProduct('${key}',${id})">Yes, Remove</button></div>`);}
-function doRemoveProduct(key,id){BIZ_PRODUCTS[key]=(BIZ_PRODUCTS[key]||[]).filter(s=>s.id!==id);if(cart[key])delete cart[key][id];rmModal();render();setTimeout(()=>toast('Product removed'),50);}
+function doRemoveProduct(key,id){BIZ_PRODUCTS[key]=(BIZ_PRODUCTS[key]||[]).filter(s=>s.id!==id);if(cart[key])delete cart[key][id];saveData();rmModal();render();setTimeout(()=>toast('Product removed'),50);}
 // ── Discount Functions ────────────────────────────────────────────
 function toggleDiscountRow(key){
   if(!discount[key])discount[key]={type:'fixed',val:'',open:false};
@@ -3407,7 +3509,7 @@ function recordWaste(key,prodId,qty){
   // Always log the waste
   if(!BIZ_WASTELOGS[key])BIZ_WASTELOGS[key]=[];
   BIZ_WASTELOGS[key].push({prodName:prod.name,qty,time:ts(),deducted:hasRecipe});
-  rmModal();render();
+  rmModal();saveData();render();
   const msg=hasRecipe
     ?`Waste recorded — ${prod.name} ×${qty} · inventory deducted ✓`
     :`Waste recorded — ${prod.name} ×${qty} · logged only ✓`;
@@ -3963,10 +4065,10 @@ function fillExpCat(key,cat,isNew){
 }
 function saveExp(key){const desc=document.getElementById('ed-'+key)?.value.trim();const amount=parseFloat(document.getElementById('ea-'+key)?.value)||0;const cat=document.getElementById('ec-'+key)?.value.trim()||'Other';if(!desc||amount<=0){toast('Fill description and amount','err');return;}// Save new category if not already in list
 if(cat){const allCats=[...new Set([...(ECATS_MAP[key]||[]).concat(BIZ_EXP_CATS[key]||[])])];if(!allCats.includes(cat)){if(!BIZ_EXP_CATS[key])BIZ_EXP_CATS[key]=[];BIZ_EXP_CATS[key].push(cat);}}if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];BIZ_EXPLOGS[key].push({id:uid(),desc,amount,cat,time:ts(),dateKey:dateKey()});render();setTimeout(()=>toast(`Expense saved — ${p(amount)} ✓`),50);}
-function logCS(){const desc=document.getElementById('csd')?.value.trim();const amount=parseFloat(document.getElementById('csa')?.value)||0;const method=document.getElementById('csm')?.value;if(!desc||amount<=0){toast('Fill all fields','err');return;}if(!BIZ_LOGS.cs)BIZ_LOGS.cs=[];BIZ_LOGS.cs.push({id:txn(),desc,total:amount,method,time:ts()});todayRev.cs=(todayRev.cs||0)+amount;render();setTimeout(()=>toast(`Recorded ${p(amount)} ✓`),50);}
-function logPV(){const machine=document.getElementById('pvm')?.value.trim();const coins=parseFloat(document.getElementById('pvc')?.value)||0;const load=parseFloat(document.getElementById('pvl')?.value)||0;if(!machine||coins<=0){toast('Fill machine and coins','err');return;}const net=coins-load;if(!BIZ_LOGS.pv)BIZ_LOGS.pv=[];BIZ_LOGS.pv.push({id:txn(),machine,coins,load,net,time:ts()});todayRev.pv=(todayRev.pv||0)+net;render();setTimeout(()=>toast(`Collected ${p(net)} net ✓`),50);}
-function markPaid(){const id=parseInt(document.getElementById('ic')?.value);if(!id){toast('Select a client','err');return;}const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;render();setTimeout(()=>toast(`${c.name} marked paid ✓`),50);}
-function qPay(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;render();setTimeout(()=>toast(`${c.name} paid ✓`),50);}
+function logCS(){const desc=document.getElementById('csd')?.value.trim();const amount=parseFloat(document.getElementById('csa')?.value)||0;const method=document.getElementById('csm')?.value;if(!desc||amount<=0){toast('Fill all fields','err');return;}if(!BIZ_LOGS.cs)BIZ_LOGS.cs=[];BIZ_LOGS.cs.push({id:txn(),desc,total:amount,method,time:ts()});todayRev.cs=(todayRev.cs||0)+amount;saveData();render();setTimeout(()=>toast(`Recorded ${p(amount)} ✓`),50);}
+function logPV(){const machine=document.getElementById('pvm')?.value.trim();const coins=parseFloat(document.getElementById('pvc')?.value)||0;const load=parseFloat(document.getElementById('pvl')?.value)||0;if(!machine||coins<=0){toast('Fill machine and coins','err');return;}const net=coins-load;if(!BIZ_LOGS.pv)BIZ_LOGS.pv=[];BIZ_LOGS.pv.push({id:txn(),machine,coins,load,net,time:ts()});todayRev.pv=(todayRev.pv||0)+net;saveData();render();setTimeout(()=>toast(`Collected ${p(net)} net ✓`),50);}
+function markPaid(){const id=parseInt(document.getElementById('ic')?.value);if(!id){toast('Select a client','err');return;}const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;saveData();render();setTimeout(()=>toast(`${c.name} marked paid ✓`),50);}
+function qPay(id){const c=CLIENTS.find(x=>x.id===id);if(!c)return;c.status='Paid';todayRev.internet=(todayRev.internet||0)+c.amount;saveData();render();setTimeout(()=>toast(`${c.name} paid ✓`),50);}
 function goScreen(s){screen=s;svcQ='';if(s!=='home')initBizData(s);render();}
 function setXTab(t){bizSubTab[screen]=t;['sell','stock','pricing','others'].forEach(x=>{const b=document.getElementById('nb-'+x);if(b)b.classList.toggle('act',x===t)});render();}
 function clearAllData(){
