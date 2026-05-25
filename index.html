@@ -2321,11 +2321,11 @@ function buildReceiptHtml(biz,log,key){
       <div style="position:relative">
         <button style="padding:13px 14px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:pointer;font-family:inherit;-webkit-appearance:none"
           onclick="var m=document.getElementById('pdrop-${key}');m.style.display=m.style.display==='none'?'block':'none'">▾</button>
-        <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:190px;overflow:hidden;z-index:500">
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';(function(){var n=document.getElementById('${uid}');if(!n||!n.value.trim()){toast('Enter customer name first','err');return;}doPrintReceipt('${uid}','${key}');})()"
-            id="pdrop-single-${key}" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#1a6f3c;border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')"
-            style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''"><span style="color:#2563eb;font-weight:600;font-size:12px">📄 Print All Receipts</span></div>
+        <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:#ffffff;border:1px solid #d1d5db;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:190px;overflow:hidden;z-index:500">
+          <button onclick="document.getElementById('pdrop-${key}').style.display='none';(function(){var n=document.getElementById('${uid}');if(!n||!n.value.trim()){toast('Enter customer name first','err');return;}doPrintReceipt('${uid}','${key}');})()"
+            id="pdrop-single-${key}" style="display:block;width:100%;padding:12px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#1a6f3c;background:#ffffff;border:none;border-bottom:1px solid #e5e7eb;text-align:left;font-family:inherit" onmouseover="this.style.background='#f3faf5'" onmouseout="this.style.background='#ffffff'">🖨️ Print This Receipt</button>
+          <button onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')"
+            style="display:block;width:100%;padding:12px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#2563eb;background:#ffffff;border:none;text-align:left;font-family:inherit" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='#ffffff'">📄 Print All Receipts</button>
         </div>
       </div>
     </div>`;
