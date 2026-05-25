@@ -497,7 +497,8 @@ let saleMode={}; // per-key: 'sale' or 'credit'
 // Reserved when item added to cart, released on remove/clear, cleared on sale
 let stockReservations={};
 let iFilter='All',revPer='Today',expandBiz=null,svcQ='';
-let repPer={}; // per-biz report filter: 'Today'|'Monthly'|'Yearly'
+let repPer={}; // per-biz report filter: 'Today'|'Monthly'|'Yearly'|'Custom'
+let customDate={}; // per-biz custom date string (dateKey format) e.g. 'Mon May 23 2026'
 let sellCatFilter={}; // per-biz selected category pill
 let discount={}; // per-biz: {type:'fixed'|'pct', val:number}
 let todayRev={};
@@ -633,6 +634,24 @@ function getExp(key){
 }
 function getBadge(key){if(key==='internet')return`${CLIENTS.filter(c=>c.status==='Unpaid').length} unpaid`;const b=getBizInfo(key);return b?.ready?'POS ready':'Coming soon';}
 
+// Revenue and expense aggregated by period — used by Hub P&L
+function getRevPer(key,per){
+  if(per==='Today')return getRev(key);
+  const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
+  return(BIZ_LOGS[key]||[]).filter(l=>{
+    const d=l.dateKey?new Date(l.dateKey):null;if(!d)return false;
+    return per==='Monthly'?(d.getMonth()===cm&&d.getFullYear()===cy):d.getFullYear()===cy;
+  }).reduce((s,l)=>s+(l.total||0),0);
+}
+function getExpPer(key,per){
+  if(per==='Today')return getExp(key);
+  const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
+  return(BIZ_EXPLOGS[key]||[]).filter(e=>{
+    const d=e.dateKey?new Date(e.dateKey):null;if(!d)return false;
+    return per==='Monthly'?(d.getMonth()===cm&&d.getFullYear()===cy):d.getFullYear()===cy;
+  }).reduce((s,e)=>s+e.amount,0);
+}
+
 function render(){
   // Safety cleanup — remove any stale overlays that could block all clicks
   const staleModal=document.getElementById('_modal');
@@ -651,10 +670,10 @@ function render(){
 }
 
 function buildHome(){
-  const tot=selectedBiz.reduce((s,k)=>s+(getRev(k)-getExp(k)),0);
+  const tot=selectedBiz.reduce((s,k)=>s+(getRevPer(k,revPer)-getExpPer(k,revPer)),0);
   const revenueRows=selectedBiz.length===0
     ?`<div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">Select businesses below to see revenue</div>`
-    :selectedBiz.map(k=>{const b=getBizInfo(k);const rev=getRev(k);const exp=getExp(k);const net=rev-exp;return`<div class="brow" onclick="expandBiz=expandBiz==='${k}'?null:'${k}';render()"><div class="brow-inner"><span class="brow-name"><span style="font-size:10px">${expandBiz===k?'▾':'▸'}</span>${b?.name||k}</span><span class="brow-amt${net===0?' zero':''}" style="${net<0?'color:var(--danger)':''}">${p(net)}</span></div></div><div class="biz-exp${expandBiz===k?' open':''}"><div class="bei"><div class="bei-stats"><div class="er"><span class="er-l">Revenue</span><span class="er-g">${p(rev)}</span></div><div class="er"><span class="er-l">Expenses</span><span class="er-r">${p(exp)}</span></div><div class="er"><span class="er-l">Net Profit</span><span class="${net>=0?'er-g':'er-r'}">${p(net)}</span></div></div>${buildTrendline(k,revPer,rev)}</div></div>`;}).join('');
+    :selectedBiz.map(k=>{const b=getBizInfo(k);const rev=getRevPer(k,revPer);const exp=getExpPer(k,revPer);const net=rev-exp;return`<div class="brow" onclick="expandBiz=expandBiz==='${k}'?null:'${k}';render()"><div class="brow-inner"><span class="brow-name"><span style="font-size:10px">${expandBiz===k?'▾':'▸'}</span>${b?.name||k}</span><span class="brow-amt${net===0?' zero':''}" style="${net<0?'color:var(--danger)':''}">${p(net)}</span></div></div><div class="biz-exp${expandBiz===k?' open':''}"><div class="bei"><div class="bei-stats"><div class="er"><span class="er-l">Revenue</span><span class="er-g">${p(rev)}</span></div><div class="er"><span class="er-l">Expenses</span><span class="er-r">${p(exp)}</span></div><div class="er"><span class="er-l">Net Profit</span><span class="${net>=0?'er-g':'er-r'}">${p(net)}</span></div></div>${buildTrendline(k,revPer,rev)}</div></div>`;}).join('');
   const revenueSection=`<div class="rev-scroll">${revenueRows}</div><div style="display:flex;justify-content:space-between;padding:8px 0 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px"><span style="font-size:12px;font-weight:700;color:var(--text-primary)">Net Profit</span><span style="font-size:15px;font-weight:700;color:${tot>=0?'var(--success)':'var(--danger)'}">${p(tot)}</span></div>`;
   const bizCards=selectedBiz.map(k=>{const b=getBizInfo(k);if(!b)return'';return`<div class="bc-wrap"><div class="bc" onclick="goScreen('${k}')"><div class="bi">${b.icon}</div><div class="bn">${b.name}</div><div class="bb">${getBadge(k)}</div></div><button class="bc-remove" onclick="event.stopPropagation();confirmRemoveBiz('${k}')" title="Remove from hub">✕</button></div>`;}).join('');
   if(selectedBiz.length===0){return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div><div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">No businesses yet</div></div><div class="empty-state"><div class="empty-icon">🏪</div><div class="empty-title">Set up your businesses</div><div class="empty-sub">Choose which business types you operate — each one comes with its own POS, inventory, and expense tracking built-in.</div><button class="setup-btn" onclick="openBizSelector()">＋ Select Your Businesses</button></div></div>`;}
@@ -1932,6 +1951,74 @@ function buildExpensesContent(key){
   return`<div class="sr2"><div class="sc"><div class="slb">Today's Expenses</div><div class="sv r">${p(total)}</div></div><div class="sc"><div class="slb">Entries</div><div class="sv b">${todayLogs.length}</div></div></div><div class="sl">📸 Scan Receipt</div><div class="cb"><div class="scan-row"><button class="scan-btn" onclick="openCamera('exp-${key}')">📷 Camera</button><button class="scan-btn" onclick="openFile('exp-${key}')">🖼️ Upload</button></div><div class="loading-bar" id="lb-exp-${key}"><div class="loading-bar-inner" id="lbi-exp-${key}"></div></div><div class="scan-result" id="sr-exp-${key}"><div class="scan-r-title">✏️ Review scanned expenses</div><div id="si-exp-${key}"></div><button class="bm" onclick="applyScanned('exp-${key}')">✓ Save All Expenses</button></div></div><div class="sl">Add Expense</div><div class="cb"><div class="ac-wrap"><input class="inp" id="ed-${key}" placeholder="Description" autocomplete="off" oninput="expDescAC('${key}',this.value)" onblur="setTimeout(()=>{const el=document.getElementById('exp-ac-${key}');if(el)el.innerHTML=''},150)"><div id="exp-ac-${key}"></div></div><div class="ir"><input class="inp" id="ea-${key}" type="number" placeholder="Amount ₱" style="margin-bottom:0"><div style="position:relative;flex:1"><input class="inp" id="ec-${key}" placeholder="Category" autocomplete="off" value="${allCats[0]||'Supplies'}" style="margin-bottom:0;width:100%" oninput="expCatAC('${key}',this.value)" onblur="setTimeout(()=>{const el=document.getElementById('exp-cat-ac-${key}');if(el)el.innerHTML=''},150)"><div id="exp-cat-ac-${key}" style="position:absolute;top:100%;left:0;right:0;z-index:200;background:var(--bg-primary);border:0.5px solid var(--accent);border-radius:var(--radius-sm);box-shadow:0 4px 16px rgba(0,0,0,.18);max-height:160px;overflow-y:auto;margin-top:2px"></div></div></div><button class="bm" onclick="saveExp('${key}')" style="margin-top:7px">Save Expense</button><div class="wn">→ Activepieces → EXPENSES RECORDS</div></div>${todayLogs.length>0?`<div class="sl">Today's Log</div><div class="cb">${todayLogs.slice().reverse().map(e=>'<div class="li" style="position:relative"><div class="lt"><span class="ln">'+e.desc+'</span><span class="la-r">'+p(e.amount)+'</span></div><div class="lm">'+e.cat+(e.auto?' · 🔄 auto':'')+' · '+e.time+'</div><button onclick="deleteExp(\x27'+key+'\x27,\x27'+e.id+'\x27)" style="position:absolute;top:6px;right:4px;background:none;border:none;color:var(--text-tertiary);font-size:13px;cursor:pointer;padding:2px 4px">✕</button></div>').join('')}</div>`:''}`;
 }
 
+// ── 📊 REPORT CHARTS ─────────────────────────────────────────────
+function buildRevExpChart(rev,exp){
+  if(rev===0&&exp===0)return'';
+  const W=260,H=90,pad=10,barW=60,gap=30;
+  const maxVal=Math.max(rev,exp,1);
+  const revH=Math.round((rev/maxVal)*(H-pad*2));
+  const expH=Math.round((exp/maxVal)*(H-pad*2));
+  const baseline=H-pad;
+  const cx=(W-(barW*2+gap))/2;
+  const revX=cx, expX=cx+barW+gap;
+  const revY=baseline-revH, expY=baseline-expH;
+  return`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:${W}px;display:block;margin:0 auto">
+    <rect x="${revX}" y="${revY}" width="${barW}" height="${revH}" rx="4" fill="#22c55e" opacity="0.85"/>
+    <rect x="${expX}" y="${expY}" width="${barW}" height="${expH}" rx="4" fill="#ef4444" opacity="0.85"/>
+    <line x1="0" y1="${baseline}" x2="${W}" y2="${baseline}" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+    <text x="${revX+barW/2}" y="${revY-4}" text-anchor="middle" font-size="9" fill="#22c55e" font-weight="700" font-family="inherit">Rev</text>
+    <text x="${expX+barW/2}" y="${expY-4}" text-anchor="middle" font-size="9" fill="#ef4444" font-weight="700" font-family="inherit">Exp</text>
+  </svg>`;
+}
+
+function buildDonutChart(byMethod){
+  const entries=Object.entries(byMethod).filter(([,v])=>v>0);
+  if(entries.length===0)return'';
+  const total=entries.reduce((s,[,v])=>s+v,0);
+  if(total===0)return'';
+  const COLORS=['#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444'];
+  const cx=60,cy=60,R=44,r=26;
+  let paths='',startAngle=-Math.PI/2;
+  entries.forEach(([m,v],i)=>{
+    const slice=(v/total)*Math.PI*2;
+    const endAngle=startAngle+slice;
+    const x1=cx+R*Math.cos(startAngle),y1=cy+R*Math.sin(startAngle);
+    const x2=cx+R*Math.cos(endAngle),y2=cy+R*Math.sin(endAngle);
+    const xi1=cx+r*Math.cos(startAngle),yi1=cy+r*Math.sin(startAngle);
+    const xi2=cx+r*Math.cos(endAngle),yi2=cy+r*Math.sin(endAngle);
+    const large=slice>Math.PI?1:0;
+    const pct=Math.round(v/total*100);
+    const midA=startAngle+slice/2;
+    const lx=cx+(R+10)*Math.cos(midA),ly=cy+(R+10)*Math.sin(midA);
+    paths+=`<path d="M${xi1} ${yi1} L${x1} ${y1} A${R} ${R} 0 ${large} 1 ${x2} ${y2} L${xi2} ${yi2} A${r} ${r} 0 ${large} 0 ${xi1} ${yi1}Z" fill="${COLORS[i%COLORS.length]}" opacity="0.88"/>`;
+    if(pct>=8)paths+=`<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle" font-size="8" font-weight="700" fill="${COLORS[i%COLORS.length]}" font-family="inherit">${pct}%</text>`;
+    startAngle=endAngle;
+  });
+  const legend=entries.map(([m,v],i)=>`<div style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:var(--text-secondary)"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${COLORS[i%COLORS.length]};flex-shrink:0"></span>${m} ${p(v)}</div>`).join('');
+  return`<div style="display:flex;align-items:center;gap:12px">
+    <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" style="width:90px;height:90px;flex-shrink:0">${paths}</svg>
+    <div style="display:flex;flex-direction:column;gap:5px">${legend}</div>
+  </div>`;
+}
+
+function buildTopProdsChart(topProds){
+  if(topProds.length===0)return'';
+  const maxQty=topProds[0][1]||1;
+  const COLORS=['#3b82f6','#22c55e','#f59e0b','#a855f7','#ef4444'];
+  return topProds.map(([name,qty],i)=>{
+    const pct=Math.round(qty/maxQty*100);
+    const shortName=name.length>18?name.slice(0,17)+'…':name;
+    return`<div style="margin-bottom:7px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--text-secondary);margin-bottom:3px">
+        <span>${i+1}. ${shortName}</span><span style="color:${COLORS[i%COLORS.length]}">×${qty}</span>
+      </div>
+      <div style="background:var(--bg-tertiary);border-radius:4px;height:7px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${COLORS[i%COLORS.length]};border-radius:4px;opacity:0.85"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 // ── 📊 END OF DAY REPORT ─────────────────────────────────────────
 function buildReportsContent(key){
   const per=repPer[key]||'Today';
@@ -1954,6 +2041,11 @@ function buildReportsContent(key){
       const d=l.dateKey?new Date(l.dateKey):null;
       return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;
     });
+    if(per==='Custom'){
+      const cd=customDate[key];
+      if(!cd)return[];
+      return logs.filter(l=>l.dateKey===cd);
+    }
     // Yearly
     return logs.filter(l=>{
       const d=l.dateKey?new Date(l.dateKey):null;
@@ -1972,6 +2064,11 @@ function buildReportsContent(key){
       const d=e.dateKey?new Date(e.dateKey):null;
       return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;
     });
+    if(per==='Custom'){
+      const cd=customDate[key];
+      if(!cd)return[];
+      return explogs.filter(e=>e.dateKey===cd);
+    }
     return explogs.filter(e=>{
       const d=e.dateKey?new Date(e.dateKey):null;
       return d&&d.getFullYear()===curYear;
@@ -1982,7 +2079,7 @@ function buildReportsContent(key){
   const filteredExp=expForPer();
 
   // Revenue: for Today use todayRev (already tracked), for Monthly/Yearly sum from logs
-  const rev=per==='Today'
+  const rev=(per==='Today'&&!customDate[key])
     ?getRev(key)
     :filteredLogs.reduce((s,l)=>s+(l.total||0),0);
   const exp=filteredExp.reduce((s,e)=>s+e.amount,0);
@@ -2001,8 +2098,9 @@ function buildReportsContent(key){
   const byMethod={Cash:0,GCash:0,Bank:0};
   filteredLogs.forEach(l=>{if(l.method)byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
 
-  const periodLabel=per==='Today'?`Today — ${todayShort}`:per==='Monthly'?`${now.toLocaleString('en-PH',{month:'long',year:'numeric'})}`:String(curYear);
-  const reportTitle=per==='Today'?'📊 End of Day Report':per==='Monthly'?'📊 Monthly Report':'📊 Yearly Report';
+  const cdStr=customDate[key]?new Date(customDate[key]).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}):'';
+  const periodLabel=per==='Today'?`Today — ${todayShort}`:per==='Monthly'?`${now.toLocaleString('en-PH',{month:'long',year:'numeric'})}`:per==='Custom'?(cdStr||'Pick a date'):String(curYear);
+  const reportTitle=per==='Today'?'📊 End of Day Report':per==='Monthly'?'📊 Monthly Report':per==='Custom'?`📊 Daily Report — ${cdStr||'Pick a date'}`:'📊 Yearly Report';
   const nowStr=now.toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
   return`
@@ -2010,33 +2108,132 @@ function buildReportsContent(key){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
         <div style="font-size:13px;font-weight:800;color:var(--text-primary)">${reportTitle}</div>
         <select class="inp" style="width:auto;padding:4px 8px;font-size:12px;margin:0"
-          onchange="repPer['${key}']=this.value;render()">
-          ${['Today','Monthly','Yearly'].map(x=>`<option${per===x?' selected':''}>${x}</option>`).join('')}
+          onchange="if(this.value==='Custom'){repPer['${key}']='Custom';openReportCalendar('${key}');}else{repPer['${key}']=this.value;render();}">
+          ${['Today','Monthly','Yearly','Custom'].map(x=>`<option${per===x?' selected':''}>${x}</option>`).join('')}
         </select>
       </div>
       <div style="font-size:11px;color:var(--text-tertiary)">${periodLabel} · Generated ${nowStr}</div>
     </div>
-    <div class="sr2" style="margin-bottom:8px">
-      <div class="sc"><div class="slb">Revenue</div><div class="sv g">${p(rev)}</div></div>
-      <div class="sc"><div class="slb">Expenses</div><div class="sv r">${p(exp)}</div></div>
-    </div>
-    <div class="sr2" style="margin-bottom:8px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div class="sc" style="cursor:pointer;user-select:none" onclick="var d=document.getElementById('rep-rev-drop-${key}');var a=document.getElementById('rep-rev-arr-${key}');if(d){d.style.display=d.style.display==='none'?'block':'none';a.textContent=d.style.display==='none'?'▸':'▾';}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="slb">Revenue</div>
+            <div class="sv g">${p(rev)}</div>
+          </div>
+          <span id="rep-rev-arr-${key}" style="font-size:11px;color:var(--text-tertiary);margin-left:4px">${filteredLogs.length>0?'▸':''}</span>
+        </div>
+        <div id="rep-rev-drop-${key}" style="display:none;margin-top:8px;max-height:160px;overflow-y:auto;border-top:0.5px solid var(--border-secondary);padding-top:6px">
+          ${filteredLogs.length===0?'<div style="font-size:11px;color:var(--text-tertiary)">No transactions</div>':filteredLogs.slice().reverse().map(l=>`<div style="padding:4px 0;border-bottom:0.5px solid var(--border-secondary);font-size:11px"><div style="display:flex;justify-content:space-between;font-weight:600"><span style="color:var(--text-primary);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(l.items||[]).map(i=>i.name).join(', ')||l.id}</span><span style="color:#22c55e;flex-shrink:0">${p(l.total)}</span></div><div style="color:var(--text-tertiary);font-size:10px;margin-top:1px">${l.method||''} · ${l.time||''}</div></div>`).join('')}
+        </div>
+      </div>
+      <div class="sc" style="cursor:pointer;user-select:none" onclick="var d=document.getElementById('rep-exp-drop-${key}');var a=document.getElementById('rep-exp-arr-${key}');if(d){d.style.display=d.style.display==='none'?'block':'none';a.textContent=d.style.display==='none'?'▸':'▾';}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div class="slb">Expenses</div>
+            <div class="sv r">${p(exp)}</div>
+          </div>
+          <span id="rep-exp-arr-${key}" style="font-size:11px;color:var(--text-tertiary);margin-left:4px">${filteredExp.length>0?'▸':''}</span>
+        </div>
+        <div id="rep-exp-drop-${key}" style="display:none;margin-top:8px;max-height:160px;overflow-y:auto;border-top:0.5px solid var(--border-secondary);padding-top:6px">
+          ${filteredExp.length===0?'<div style="font-size:11px;color:var(--text-tertiary)">No expenses</div>':filteredExp.slice().reverse().map(e=>`<div style="padding:4px 0;border-bottom:0.5px solid var(--border-secondary);font-size:11px"><div style="display:flex;justify-content:space-between;font-weight:600"><span style="color:var(--text-primary);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.desc||''}</span><span style="color:#ef4444;flex-shrink:0">${p(e.amount)}</span></div><div style="color:var(--text-tertiary);font-size:10px;margin-top:1px">${e.cat||''} · ${e.time||''}</div></div>`).join('')}
+        </div>
+      </div>
       <div class="sc"><div class="slb">Net Profit</div><div class="sv ${net>=0?'g':'r'}">${p(net)}</div></div>
       <div class="sc"><div class="slb">Transactions</div><div class="sv b">${txnCount}</div></div>
-    </div>
-    <div class="sr2" style="margin-bottom:8px">
       <div class="sc"><div class="slb">Avg Sale</div><div class="sv b">${p(avgSale)}</div></div>
       <div class="sc"><div class="slb">Margin</div><div class="sv ${net>=0?'g':'r'}">${rev>0?Math.round(net/rev*100):0}%</div></div>
+      ${Object.entries(byMethod).map(([m,v])=>`<div class="sc"><div class="slb">${m}</div><div class="sv" style="color:var(--text-primary)">${p(v)}</div></div>`).join('')}
     </div>
-    <div class="sl">💳 Payment Breakdown</div>
-    <div class="cb" style="margin-bottom:8px">
-      ${Object.entries(byMethod).map(([m,v])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:0.5px solid var(--border-secondary);font-size:12px"><span style="color:var(--text-secondary);font-weight:600">${m}</span><span style="font-weight:700;color:var(--text-primary)">${p(v)}</span></div>`).join('')}
-    </div>
-    ${topProds.length>0?`<div class="sl">🏆 Top Products</div><div class="cb" style="margin-bottom:8px">${topProds.map(([name,qty],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid var(--border-secondary);font-size:12px"><span style="color:var(--text-secondary);font-weight:600">${i+1}. ${name}</span><span style="font-weight:700;color:var(--accent)">×${qty} sold</span></div>`).join('')}</div>`:''}
+    ${(rev>0||exp>0)?`<div class="sl">📊 Revenue vs Expenses</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildRevExpChart(rev,exp)}</div>`:''}
+    ${Object.values(byMethod).some(v=>v>0)?`<div class="sl">💳 Payment Breakdown</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildDonutChart(byMethod)}</div>`:''}
+    ${topProds.length>0?`<div class="sl">🏆 Top Products</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildTopProdsChart(topProds)}</div>`:''}
     <div class="sl">📋 Transactions (${txnCount})</div>
     <div class="cb" style="max-height:220px;overflow-y:auto">
       ${txnCount===0?`<div class="le">No transactions for this period</div>`:filteredLogs.slice().reverse().map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}
     </div>`;
+}
+
+// ── 📅 CUSTOM DATE CALENDAR ──────────────────────────────────────
+function openReportCalendar(key){
+  // Collect all days that have logs or expenses for this biz
+  const allLogs=BIZ_LOGS[key]||[];
+  const allExp=BIZ_EXPLOGS[key]||[];
+  const daysWithData=new Set();
+  allLogs.forEach(l=>{if(l.dateKey)daysWithData.add(l.dateKey);});
+  allExp.forEach(e=>{if(e.dateKey)daysWithData.add(e.dateKey);});
+
+  // Calendar state — start from current month
+  let calYear=new Date().getFullYear();
+  let calMonth=new Date().getMonth();
+
+  function buildCal(){
+    const monthNames=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    const firstDay=new Date(calYear,calMonth,1).getDay(); // 0=Sun
+    const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
+    const todayDk=dateKey();
+    const selDk=customDate[key]||'';
+
+    let dayGrid='';
+    // Day headers
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d=>{
+      dayGrid+=`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--text-tertiary);padding:4px 0">${d}</div>`;
+    });
+    // Empty cells before first day
+    for(let i=0;i<firstDay;i++){
+      dayGrid+=`<div></div>`;
+    }
+    // Day cells
+    for(let d=1;d<=daysInMonth;d++){
+      const dk=new Date(calYear,calMonth,d).toDateString();
+      const hasData=daysWithData.has(dk);
+      const isToday=dk===todayDk;
+      const isSel=dk===selDk;
+      const bg=isSel?'var(--accent)':isToday?'var(--accent-light)':'transparent';
+      const color=isSel?'#fff':hasData?'var(--accent)':'var(--text-primary)';
+      const fw=hasData||isToday||isSel?'700':'400';
+      const dot=hasData&&!isSel?`<div style="width:4px;height:4px;border-radius:50%;background:var(--accent);margin:1px auto 0"></div>`:'';
+      dayGrid+=`<div onclick="pickReportDate('${key}','${dk}')"
+        style="text-align:center;padding:6px 2px;border-radius:6px;cursor:pointer;background:${bg};color:${color};font-weight:${fw};font-size:12px;line-height:1"
+        onmouseover="if('${isSel}'!=='true')this.style.background='var(--bg-tertiary)'"
+        onmouseout="if('${isSel}'!=='true')this.style.background='${bg}'">
+        ${d}${dot}
+      </div>`;
+    }
+
+    return`
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <button onclick="shiftCalMonth('${key}',-1)" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-primary);padding:4px 8px">‹</button>
+        <span style="font-size:13px;font-weight:700;color:var(--text-primary)">${monthNames[calMonth]} ${calYear}</span>
+        <button onclick="shiftCalMonth('${key}',1)" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--text-primary);padding:4px 8px">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">
+        ${dayGrid}
+      </div>
+      <div style="margin-top:10px;font-size:10px;color:var(--text-tertiary);text-align:center">● = days with data</div>`;
+  }
+
+  // Store month navigation on window so inline buttons can call it
+  window._calState={key,get calYear(){return calYear;},get calMonth(){return calMonth;}};
+  window.shiftCalMonth=function(k,dir){
+    calMonth+=dir;
+    if(calMonth>11){calMonth=0;calYear++;}
+    if(calMonth<0){calMonth=11;calYear--;}
+    const body=document.getElementById('_cal_body');
+    if(body)body.innerHTML=buildCal();
+  };
+  window.pickReportDate=function(k,dk){
+    customDate[k]=dk;
+    repPer[k]='Custom';
+    rmModal();
+    render();
+  };
+
+  modal(`
+    <div class="modal-t">📅 Pick a Date</div>
+    <div id="_cal_body" style="min-width:260px">${buildCal()}</div>
+    <button class="btn-c" style="width:100%;margin-top:10px" onclick="rmModal();if(!customDate['${key}']){repPer['${key}']='Today';}render()">Cancel</button>
+  `);
 }
 
 // ── 🧾 RECEIPT ───────────────────────────────────────────────────
@@ -2094,8 +2291,9 @@ function buildReceiptHtml(biz,log,key){
         Date&nbsp;<span style="border-bottom:1px solid #333;min-width:110px;display:inline-block;padding:0 4px">${dateStr}</span>
       </div>
       <div style="margin-bottom:10px;font-size:13px">
-        SOLD TO&nbsp;<input id="${uid}" type="text" placeholder="Customer name (optional)"
-          style="border:none;border-bottom:1px solid #333;outline:none;font-size:13px;font-family:inherit;min-width:180px;background:transparent;color:#000;padding:0 4px">
+        SOLD TO&nbsp;<input id="${uid}" type="text" placeholder="Enter customer name to print"
+          style="border:none;border-bottom:1px solid #333;outline:none;font-size:13px;font-family:inherit;min-width:180px;background:transparent;color:#000;padding:0 4px"
+          oninput="(function(v){var btn=document.getElementById('print-btn-${key}');var dd=document.getElementById('print-dd-${key}');if(btn){btn.disabled=!v;btn.style.opacity=v?'1':'0.45';btn.style.cursor=v?'pointer':'not-allowed';}if(dd){dd.disabled=!v;dd.style.opacity=v?'1':'0.45';dd.style.cursor=v?'pointer':'not-allowed';}})(this.value.trim())">
       </div>
       <table class="receipt-table">
         <thead>
@@ -2115,10 +2313,20 @@ function buildReceiptHtml(biz,log,key){
         SIGNATURE&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:160px">&nbsp;</span>
       </div>
     </div>
-    <button style="width:100%;margin-top:10px;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;-webkit-appearance:none"
-      onclick="doPrintReceipt('${uid}','${key}')">
-      🖨️ Print
-    </button>`;
+    <div style="display:flex;gap:2px;margin-top:10px">
+      <button id="print-btn-${key}" disabled style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px 0 0 8px;cursor:not-allowed;font-family:inherit;-webkit-appearance:none;opacity:0.45"
+        onclick="doPrintReceipt('${uid}','${key}')">
+        🖨️ Print
+      </button>
+      <div style="position:relative">
+        <button id="print-dd-${key}" disabled style="padding:13px 14px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:not-allowed;font-family:inherit;-webkit-appearance:none;opacity:0.45"
+          onclick="var m=document.getElementById('pdrop-${key}');m.style.display=m.style.display==='none'?'block':'none'">▾</button>
+        <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:180px;overflow:hidden;z-index:500">
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintReceipt('${uid}','${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-primary);border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-primary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">📄 Print All Receipts</div>
+        </div>
+      </div>
+    </div>`;
 }
 
 function doPrintReceipt(soldToId,key){
@@ -2177,7 +2385,14 @@ ${discountLine}
   // Save to localStorage — overwrites previous, one receipt per biz key
   try{localStorage.setItem('lastReceipt_'+aKey,html);}catch(e){toast('Could not save receipt — storage full','err');return;}
 
-  // Unlock the Print button
+  // Save printed status: {txnId: customerName}
+  if(logId){
+    let printed={};
+    try{printed=JSON.parse(localStorage.getItem('printedReceipts_'+aKey)||'{}')}catch(e){}
+    printed[String(logId)]=soldToName;
+    try{localStorage.setItem('printedReceipts_'+aKey,JSON.stringify(printed));}catch(e){}
+  }
+
   // Open print window immediately
   const w=window.open('about:blank','_blank');
   if(!w){toast('Pop-up blocked — allow pop-ups for this site','err');return;}
@@ -2193,19 +2408,100 @@ function loadReceiptInTab(key,mode){
   if(el)el.innerHTML=buildReceiptHtml(biz,log,key);
 }
 
+
+function doPrintAll(key){
+  const logs=BIZ_LOGS[key]||[];
+  if(logs.length===0){toast('No transactions to print','err');return;}
+  let printed={};
+  try{printed=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}')}catch(e){}
+
+  function buildReceiptBox(l){
+    const soldTo=printed[String(l.id)]!==undefined?printed[String(l.id)]:'';
+    const d=l.dateKey?new Date(l.dateKey):new Date();
+    const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+    const items=l.items||[];
+    const minRows=Math.max(6,items.length+2);
+    let rows='';
+    for(let i=0;i<minRows;i++){
+      const it=items[i];
+      if(it){
+        const unit=(it.unit||'').replace(/^per\s+/i,'').trim()||'item';
+        const amt=it.price*it.qty;
+        rows+=`<tr><td>${unit}</td><td>${it.qty}</td><td style="text-align:left">${(it.name||'').toUpperCase()}</td><td>${it.price%1===0?it.price:it.price.toFixed(2)}</td><td>${amt%1===0?amt:amt.toFixed(2)}</td></tr>`;
+      } else if(i===minRows-1){
+        const tot=l.total||0;
+        rows+=`<tr><td colspan="3" style="border:none"></td><td style="font-weight:700;text-align:right;border-left:1px solid #333">TOTAL</td><td style="font-weight:700">\u20b1${tot%1===0?tot:tot.toFixed(2)}</td></tr>`;
+      } else {
+        rows+=`<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>`;
+      }
+    }
+    const disc=l.discount&&l.discount.amt>0?`<div style="text-align:right;font-size:7px;color:#c00">Disc: -\u20b1${(l.discount.amt||0).toFixed(2)}</div>`:'';
+    return`<div class="receipt-box">
+      <div class="rbiz">BUSINESS NAME</div>
+      <div class="rdate">Date <span class="rval">${dateStr}</span></div>
+      <div class="rsold">SOLD TO <span class="rval">${soldTo}</span></div>
+      <table><thead><tr><th>UNIT</th><th>QTY</th><th>ARTICLES</th><th>PRICE</th><th>AMT</th></tr></thead><tbody>${rows}</tbody></table>
+      ${disc}
+      <div class="rpay">${l.method||'Cash'}</div>
+      <div class="rsig">SIGNATURE <span class="rval2"></span></div>
+    </div>`;
+  }
+
+  const boxesHtml=logs.map(l=>buildReceiptBox(l)).join('');
+  const d=new Date();
+  const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>All Receipts ${dateStr}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:8px;color:#000;background:#fff;padding:8mm}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6mm}
+.receipt-box{border:0.5px solid #999;padding:4mm;page-break-inside:avoid;font-size:7.5px}
+.rbiz{text-align:center;font-weight:800;font-size:9px;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+.rdate{display:flex;justify-content:flex-end;margin-bottom:3px;font-size:7px}
+.rsold{margin-bottom:4px;font-size:7px}
+.rval{border-bottom:0.5px solid #333;display:inline-block;min-width:60px;padding:0 2px}
+.rval2{border-bottom:0.5px solid #333;display:inline-block;min-width:80px}
+table{width:100%;border-collapse:collapse;margin:3px 0}
+th,td{border:0.5px solid #333;padding:2px 3px;text-align:center;font-size:7px}
+th{font-weight:700;background:#f0f0f0;font-size:6.5px}
+.rpay{text-align:right;font-size:7px;color:#555;margin-top:2px}
+.rsig{text-align:center;margin-top:6px;font-size:7px}
+@media print{
+  @page{size:A4;margin:8mm}
+  body{padding:0}
+}
+</style></head>
+<body>
+<div class="grid">${boxesHtml}</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
+
+  const w=window.open('about:blank','_blank');
+  if(!w){toast('Pop-up blocked — allow pop-ups for this site','err');return;}
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
 function showReceiptPicker(key){
-  const logs=(BIZ_LOGS[key]||[]).slice().reverse().slice(0,30);
+  const logs=(BIZ_LOGS[key]||[]).slice().reverse().slice(0,50);
+  let printed={};
+  try{printed=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}')}catch(e){}
   modal(`<div class="modal-t">📋 Pick Transaction</div>
     <div style="max-height:340px;overflow-y:auto">
-      ${logs.map(l=>`<div onclick="rmModal();setTimeout(()=>loadReceiptInTab('${key}','${l.id}'),80)"
+      ${logs.map(l=>{const pName=printed[String(l.id)];const isPrinted=pName!==undefined;return`<div onclick="rmModal();setTimeout(()=>loadReceiptInTab('${key}','${l.id}'),80)"
         style="padding:10px;border-bottom:0.5px solid var(--border-secondary);cursor:pointer"
         onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">
-        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700">
-          <span>${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')}</span>
-          <span style="color:var(--success)">₱${l.total}</span>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:6px">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')}</span>
+          <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+            ${isPrinted?`<span style="font-size:10px;font-weight:700;color:#1a6f3c;background:#dcfce7;padding:2px 6px;border-radius:10px;white-space:nowrap">✅ ${pName||'No name'}</span>`:''}
+            <span style="color:var(--success)">₱${l.total}</span>
+          </div>
         </div>
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.method||''} · ${l.time||''}</div>
-      </div>`).join('')}
+      </div>`;}).join('')}
     </div>
     <button class="btn-c" style="width:100%;margin-top:8px" onclick="rmModal()">Cancel</button>`);
 }
