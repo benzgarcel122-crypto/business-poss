@@ -2254,7 +2254,7 @@ function buildReceiptContent(key){
 
 function buildReceiptHtml(biz,log,key){
   if(!log)return'<div class="cb"><div class="le">No transaction selected</div></div>';
-  const d=new Date();
+  const d=log.dateKey?new Date(log.dateKey):new Date();
   const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
   const items=log.items||[];
   // Build table rows — empty filler rows to give the table some height (min 8 rows total)
@@ -2322,8 +2322,8 @@ function buildReceiptHtml(biz,log,key){
         <button id="print-dd-${key}" disabled style="padding:13px 14px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:not-allowed;font-family:inherit;-webkit-appearance:none;opacity:0.45"
           onclick="var m=document.getElementById('pdrop-${key}');m.style.display=m.style.display==='none'?'block':'none'">▾</button>
         <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:180px;overflow:hidden;z-index:500">
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintReceipt('${uid}','${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-primary);border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-primary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">📄 Print All Receipts</div>
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintReceipt('${uid}','${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#1a6f3c;border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#2563eb" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">📄 Print All Receipts</div>
         </div>
       </div>
     </div>`;
@@ -2335,17 +2335,18 @@ function doPrintReceipt(soldToId,key){
   const area=document.getElementById('print-receipt-area');
   if(!area){toast('No receipt loaded','err');return;}
 
-  const d=new Date();
-  const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+  // Use transaction date, not today
+  const logId=area.getAttribute('data-logid');
+  const aKey=key||area.getAttribute('data-key');
+  const log=logId&&aKey?(BIZ_LOGS[aKey]||[]).find(l=>String(l.id)===String(logId)):null;
+  const txnDate=log&&log.dateKey?new Date(log.dateKey):new Date();
+  const dateStr=`${txnDate.getMonth()+1}/${txnDate.getDate()}/${txnDate.getFullYear()}`;
   const table=area.querySelector('table');
   const tableHTML=table?table.outerHTML:'';
   const paymentEl=area.querySelector('[data-payment]');
   const paymentText=paymentEl?paymentEl.textContent.trim():'';
 
-  // Read discount from the live log data via data-logid attribute on the receipt area
-  const logId=area.getAttribute('data-logid');
-  const aKey=key||area.getAttribute('data-key');
-  const log=logId&&aKey?(BIZ_LOGS[aKey]||[]).find(l=>String(l.id)===String(logId)):null;
+  // Read discount from log already fetched above
   const disc=log&&log.discount&&log.discount.amt>0?log.discount:null;
   const discountLine=disc
     ?`<div style="text-align:right;font-size:10px;color:#c00;margin-top:3px">Discount (${disc.type==='pct'?disc.val+'%':'fixed'}): −₱${(disc.amt||0).toFixed(2)}</div>`
