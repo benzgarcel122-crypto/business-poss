@@ -2293,7 +2293,7 @@ function buildReceiptHtml(biz,log,key){
       <div style="margin-bottom:10px;font-size:13px">
         SOLD TO&nbsp;<input id="${uid}" type="text" placeholder="Enter customer name to print"
           style="border:none;border-bottom:1px solid #333;outline:none;font-size:13px;font-family:inherit;min-width:180px;background:transparent;color:#000;padding:0 4px"
-          oninput="(function(v){var btn=document.getElementById('print-btn-${key}');var dd=document.getElementById('print-dd-${key}');if(btn){btn.disabled=!v;btn.style.opacity=v?'1':'0.45';btn.style.cursor=v?'pointer':'not-allowed';}if(dd){dd.disabled=!v;dd.style.opacity=v?'1':'0.45';dd.style.cursor=v?'pointer':'not-allowed';}})(this.value.trim())">
+          oninput="(function(v){var btn=document.getElementById('print-btn-${key}');if(btn){btn.disabled=!v;btn.style.opacity=v?'1':'0.45';btn.style.cursor=v?'pointer':'not-allowed';}})(this.value.trim())">
       </div>
       <table class="receipt-table">
         <thead>
@@ -2319,11 +2319,13 @@ function buildReceiptHtml(biz,log,key){
         🖨️ Print
       </button>
       <div style="position:relative">
-        <button id="print-dd-${key}" disabled style="padding:13px 14px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:not-allowed;font-family:inherit;-webkit-appearance:none;opacity:0.45"
+        <button style="padding:13px 14px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:pointer;font-family:inherit;-webkit-appearance:none"
           onclick="var m=document.getElementById('pdrop-${key}');m.style.display=m.style.display==='none'?'block':'none'">▾</button>
-        <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:180px;overflow:hidden;z-index:500">
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintReceipt('${uid}','${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#1a6f3c;border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
-          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#2563eb" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">📄 Print All Receipts</div>
+        <div id="pdrop-${key}" style="display:none;position:absolute;bottom:calc(100% + 4px);right:0;background:var(--bg-primary);border:0.5px solid var(--border-primary);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.18);min-width:190px;overflow:hidden;z-index:500">
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';(function(){var n=document.getElementById('${uid}');if(!n||!n.value.trim()){toast('Enter customer name first','err');return;}doPrintReceipt('${uid}','${key}');})()"
+            id="pdrop-single-${key}" style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#1a6f3c;border-bottom:0.5px solid var(--border-secondary)" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''">🖨️ Print This Receipt</div>
+          <div onclick="document.getElementById('pdrop-${key}').style.display='none';doPrintAll('${key}')"
+            style="padding:12px 16px;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background=''"><span style="color:#2563eb;font-weight:600;font-size:12px">📄 Print All Receipts</span></div>
         </div>
       </div>
     </div>`;
