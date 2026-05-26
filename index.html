@@ -2249,7 +2249,8 @@ function buildReceiptContent(key){
     </div>
     <div id="receipt-preview-${key}">
       ${buildReceiptHtml(biz,last,key)}
-    </div>`;
+    </div>
+    <script>setTimeout(()=>{let printed={};try{printed=JSON.parse(localStorage.getItem('printedReceipts_${key}')||'{}')}catch(e){}const savedName=printed['${last.id}'];if(savedName){const inp=document.getElementById('sold-to-${key}');if(inp){inp.value=savedName;const btn=document.getElementById('print-btn-${key}');if(btn){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';}}}},80);<\/script>`;
 }
 
 function buildReceiptHtml(biz,log,key){
@@ -2308,7 +2309,7 @@ function buildReceiptHtml(biz,log,key){
         <tbody>${rows}</tbody>
       </table>
       ${log.discount?`<div style="text-align:right;font-size:12px;color:#c00;margin-top:4px">Discount: −₱${(log.discount.amt||0).toFixed(2)}</div>`:''}
-      <div data-payment style="text-align:right;font-size:12px;color:#555;margin-top:4px">${log.method||'Cash'}</div>
+      <div data-payment style="text-align:right;font-size:12px;color:#555;margin-top:4px">${log.method==='Credit Payment'&&log.isPartial?'Partial Credit Payment':log.method||'Cash'}</div>
       <div style="text-align:center;margin-top:18px;font-size:13px">
         SIGNATURE&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:160px">&nbsp;</span>
       </div>
@@ -2409,6 +2410,20 @@ function loadReceiptInTab(key,mode){
   const log=mode==='last'?logs[logs.length-1]:logs.find(l=>String(l.id)===String(mode));
   const el=document.getElementById('receipt-preview-'+key);
   if(el)el.innerHTML=buildReceiptHtml(biz,log,key);
+  if(log){
+    let printed={};
+    try{printed=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}')}catch(e){}
+    const savedName=printed[String(log.id)];
+    if(savedName!==undefined&&savedName!==''){
+      const uid='sold-to-'+key;
+      const inp=document.getElementById(uid);
+      if(inp){
+        inp.value=savedName;
+        const btn=document.getElementById('print-btn-'+key);
+        if(btn){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';}
+      }
+    }
+  }
 }
 
 
@@ -2445,7 +2460,7 @@ function doPrintAll(key){
       <div class="rsold">SOLD TO <span class="rval">${soldTo}</span></div>
       <table><thead><tr><th>UNIT</th><th>QTY</th><th>ARTICLES</th><th>PRICE</th><th>AMT</th></tr></thead><tbody>${rows}</tbody></table>
       ${disc}
-      <div class="rpay">${l.method||'Cash'}</div>
+      <div class="rpay">${l.method==='Credit Payment'&&l.isPartial?'Partial Credit Payment':l.method||'Cash'}</div>
       <div class="rsig">SIGNATURE <span class="rval2"></span></div>
     </div>`;
   }
@@ -2488,7 +2503,7 @@ th{font-weight:700;background:#f0f0f0;font-size:6.5px}
 }
 
 function showReceiptPicker(key){
-  const logs=(BIZ_LOGS[key]||[]).slice().reverse().slice(0,50);
+  const logs=(BIZ_LOGS[key]||[]).filter(l=>!(l.method==='Credit/Utang'&&(l.total||0)===0)).slice().reverse().slice(0,50);
   let printed={};
   try{printed=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}')}catch(e){}
   modal(`<div class="modal-t">📋 Pick Transaction</div>
@@ -2503,7 +2518,7 @@ function showReceiptPicker(key){
             <span style="color:var(--success)">₱${l.total}</span>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.method||''} · ${l.time||''}</div>
+        <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${l.method==='Credit Payment'&&l.isPartial?'Partial Credit Payment':l.method||''} · ${l.time||''}</div>
       </div>`;}).join('')}
     </div>
     <button class="btn-c" style="width:100%;margin-top:8px" onclick="rmModal()">Cancel</button>`);
@@ -2680,16 +2695,9 @@ function doPartialPay(key,id){
   // Add to revenue at payment time
   todayRev[key]=(todayRev[key]||0)+actual;
   if(!BIZ_LOGS[key])BIZ_LOGS[key]=[];
-  BIZ_LOGS[key].push({
-    id:txn(),
-    items:c.items||[{name:`Credit payment — ${c.name}`,qty:1,price:actual}],
-    total:actual,
-    rawTotal:actual,
-    discount:null,
-    method:'Credit Payment',
-    time:ts(),
-    dateKey:dateKey()
-  });
+  const _plog1={id:txn(),items:c.items||[{name:`Credit payment — ${c.name}`,qty:1,price:actual}],total:actual,rawTotal:actual,discount:null,method:'Credit Payment',isPartial:(c.amountPaid<c.amount),time:ts(),dateKey:dateKey()};
+  BIZ_LOGS[key].push(_plog1);
+  try{const _pr1=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}');_pr1[String(_plog1.id)]=c.name;localStorage.setItem('printedReceipts_'+key,JSON.stringify(_pr1));}catch(e){}
   if(c.amountPaid>=c.amount){
     c.status='paid';
     c.paidTime=ts();
@@ -2715,16 +2723,9 @@ function markCreditPaid(key,id){
   if(remaining>0){
     todayRev[key]=(todayRev[key]||0)+remaining;
     if(!BIZ_LOGS[key])BIZ_LOGS[key]=[];
-    BIZ_LOGS[key].push({
-      id:txn(),
-      items:c.items||[{name:`Credit payment — ${c.name}`,qty:1,price:remaining}],
-      total:remaining,
-      rawTotal:remaining,
-      discount:null,
-      method:'Credit Payment',
-      time:ts(),
-      dateKey:dateKey()
-    });
+    const _plog2={id:txn(),items:c.items||[{name:`Credit payment — ${c.name}`,qty:1,price:remaining}],total:remaining,rawTotal:remaining,discount:null,method:'Credit Payment',time:ts(),dateKey:dateKey()};
+    BIZ_LOGS[key].push(_plog2);
+    try{const _pr2=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}');_pr2[String(_plog2.id)]=c.name;localStorage.setItem('printedReceipts_'+key,JSON.stringify(_pr2));}catch(e){}
   }
   c.amountPaid=c.amount;
   c.status='paid';
