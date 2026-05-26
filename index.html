@@ -2249,12 +2249,14 @@ function buildReceiptContent(key){
     </div>
     <div id="receipt-preview-${key}">
       ${buildReceiptHtml(biz,last,key)}
-    </div>
-    <script>setTimeout(()=>{let printed={};try{printed=JSON.parse(localStorage.getItem('printedReceipts_${key}')||'{}')}catch(e){}const savedName=printed['${last.id}'];if(savedName){const inp=document.getElementById('sold-to-${key}');if(inp){inp.value=savedName;const btn=document.getElementById('print-btn-${key}');if(btn){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';}}}},80);<\/script>`;
+    </div>`;
 }
 
 function buildReceiptHtml(biz,log,key){
   if(!log)return'<div class="cb"><div class="le">No transaction selected</div></div>';
+  let _printed={};
+  try{_printed=JSON.parse(localStorage.getItem('printedReceipts_'+key)||'{}')}catch(e){}
+  const _savedName=(log&&_printed[String(log.id)])||'';
   const d=log.dateKey?new Date(log.dateKey):new Date();
   const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
   const items=log.items||[];
@@ -2292,7 +2294,7 @@ function buildReceiptHtml(biz,log,key){
         Date&nbsp;<span style="border-bottom:1px solid #333;min-width:110px;display:inline-block;padding:0 4px">${dateStr}</span>
       </div>
       <div style="margin-bottom:10px;font-size:13px">
-        SOLD TO&nbsp;<input id="${uid}" type="text" placeholder="Enter customer name to print"
+        SOLD TO&nbsp;<input id="${uid}" type="text" placeholder="Enter customer name to print" value="${_savedName}"
           style="border:none;border-bottom:1px solid #333;outline:none;font-size:13px;font-family:inherit;min-width:180px;background:transparent;color:#000;padding:0 4px"
           oninput="(function(v){var btn=document.getElementById('print-btn-${key}');if(btn){btn.disabled=!v;btn.style.opacity=v?'1':'0.45';btn.style.cursor=v?'pointer':'not-allowed';}})(this.value.trim())">
       </div>
@@ -2315,7 +2317,7 @@ function buildReceiptHtml(biz,log,key){
       </div>
     </div>
     <div style="display:flex;gap:2px;margin-top:10px">
-      <button id="print-btn-${key}" disabled style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px 0 0 8px;cursor:not-allowed;font-family:inherit;-webkit-appearance:none;opacity:0.45"
+      <button id="print-btn-${key}" ${_savedName?'':'disabled'} style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px 0 0 8px;font-family:inherit;-webkit-appearance:none;${_savedName?'cursor:pointer;opacity:1':'cursor:not-allowed;opacity:0.45'}"
         onclick="doPrintReceipt('${uid}','${key}')">
         🖨️ Print
       </button>
