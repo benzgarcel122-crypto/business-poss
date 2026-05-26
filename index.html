@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Business Hub POS — V9</title>
 <style>
@@ -340,6 +341,7 @@ select.inp{appearance:auto}
       </div>
       <div class="net-badge online" id="netBadge"><div class="net-dot"></div><span id="netLabel">Online</span></div>
       <div class="pclk" id="posClock">--:--</div>
+      <button onclick="doLogout()" title="Sign out" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;color:var(--text-tertiary)" >🚪</button>
     </div>
   </div>
   <div class="pbody" id="posBody"></div>
@@ -526,21 +528,234 @@ let CLIENTS=[];
 
 const STORAGE_KEY='pos_v9_data';
 
-// Keys that need to be persisted
-const PERSIST_KEYS=['selectedBiz','isDark','BIZ_PRODUCTS','BIZ_STOCKS','BIZ_LOGS','BIZ_EXPLOGS','BIZ_WASTELOGS','BIZ_CREDITS','CLIENTS','todayRev','pinnedUnits','BIZ_STOCKLOGS'];
+// ── Supabase Setup ────────────────────────────────────────────
+const SUPA_URL='https://xaednpvxyufztgibyhnd.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhZWRucHZ4eXVmenRnaWJ5aG5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NzQ1NTMsImV4cCI6MjA5NTM1MDU1M30.DUuX88YG2Za8kwWvmYjzYGH-jt2YPscZGXl_N_R6_Dk';
+const supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+let currentUser=null;
 
-function saveData(){
-  try{
-    const snapshot={
-      selectedBiz,isDark,
-      BIZ_PRODUCTS,BIZ_STOCKS,BIZ_LOGS,BIZ_EXPLOGS,BIZ_WASTELOGS,BIZ_CREDITS,
-      CLIENTS,todayRev,pinnedUnits,BIZ_STOCKLOGS,BIZ_EXP_CATS,
-      savedAt:new Date().toISOString()
-    };
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(snapshot));
-  }catch(e){
-    console.warn('Save failed:',e);
+// ── Auth UI ───────────────────────────────────────────────────
+function showAuthScreen(msg=''){
+  document.getElementById('posBody').style.display='none';
+  let auth=document.getElementById('authScreen');
+  if(!auth){
+    auth=document.createElement('div');
+    auth.id='authScreen';
+    auth.style.cssText='position:fixed;inset:0;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:system-ui,-apple-system,sans-serif';
+    auth.innerHTML=`
+      <div style="background:var(--bg-primary);border-radius:16px;padding:32px 28px;width:100%;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.12);border:0.5px solid var(--border-primary)">
+        <div style="text-align:center;margin-bottom:24px">
+          <div style="font-size:32px;margin-bottom:8px">🏪</div>
+          <div style="font-size:18px;font-weight:800;color:var(--text-primary)">Business Hub POS</div>
+          <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">Sign in to your account</div>
+        </div>
+        <div id="authMsg" style="color:#dc2626;font-size:12px;text-align:center;margin-bottom:12px;min-height:16px"></div>
+        <input id="authEmail" type="email" placeholder="Email address" autocomplete="email"
+          style="width:100%;padding:12px 14px;border:1px solid var(--border-primary);border-radius:8px;font-size:14px;margin-bottom:10px;background:var(--bg-secondary);color:var(--text-primary);outline:none;font-family:inherit">
+        <input id="authPass" type="password" placeholder="Password" autocomplete="current-password"
+          style="width:100%;padding:12px 14px;border:1px solid var(--border-primary);border-radius:8px;font-size:14px;margin-bottom:16px;background:var(--bg-secondary);color:var(--text-primary);outline:none;font-family:inherit">
+        <button id="authLoginBtn" onclick="doLogin()"
+          style="width:100%;padding:13px;background:#1a6f3c;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">
+          Sign In
+        </button>
+        <button id="authSignupBtn" onclick="doSignup()"
+          style="width:100%;padding:13px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border-primary);border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">
+          Create Account
+        </button>
+        <div id="authLoading" style="display:none;text-align:center;font-size:13px;color:var(--text-tertiary);margin-top:12px">Please wait...</div>
+      </div>`;
+    document.body.appendChild(auth);
+    // Enter key submits
+    auth.querySelector('#authPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+    auth.querySelector('#authEmail').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
   }
+  auth.style.display='flex';
+  if(msg)document.getElementById('authMsg').textContent=msg;
+}
+
+function hideAuthScreen(){
+  const auth=document.getElementById('authScreen');
+  if(auth)auth.style.display='none';
+  document.getElementById('posBody').style.display='';
+}
+
+function setAuthLoading(on){
+  const ld=document.getElementById('authLoading');
+  const lb=document.getElementById('authLoginBtn');
+  const sb=document.getElementById('authSignupBtn');
+  if(ld)ld.style.display=on?'block':'none';
+  if(lb)lb.disabled=on;
+  if(sb)sb.disabled=on;
+}
+
+async function doLogin(){
+  const email=document.getElementById('authEmail')?.value.trim();
+  const pass=document.getElementById('authPass')?.value;
+  if(!email||!pass){document.getElementById('authMsg').textContent='Enter email and password';return;}
+  setAuthLoading(true);
+  document.getElementById('authMsg').textContent='';
+  const {data,error}=await supa.auth.signInWithPassword({email,password:pass});
+  setAuthLoading(false);
+  if(error){document.getElementById('authMsg').textContent=error.message;return;}
+  currentUser=data.user;
+  await loadFromSupabase();
+  hideAuthScreen();
+  render();
+}
+
+async function doSignup(){
+  const email=document.getElementById('authEmail')?.value.trim();
+  const pass=document.getElementById('authPass')?.value;
+  if(!email||!pass){document.getElementById('authMsg').textContent='Enter email and password';return;}
+  if(pass.length<6){document.getElementById('authMsg').textContent='Password must be at least 6 characters';return;}
+  setAuthLoading(true);
+  document.getElementById('authMsg').textContent='';
+  const {data,error}=await supa.auth.signUp({email,password:pass});
+  setAuthLoading(false);
+  if(error){document.getElementById('authMsg').textContent=error.message;return;}
+  currentUser=data.user;
+  await loadFromSupabase();
+  hideAuthScreen();
+  render();
+  toast('Account created! Welcome 🎉');
+}
+
+async function doLogout(){
+  await supa.auth.signOut();
+  currentUser=null;
+  // Reset all data
+  selectedBiz=[];BIZ_PRODUCTS={};BIZ_STOCKS={};BIZ_LOGS={};BIZ_EXPLOGS={};
+  BIZ_WASTELOGS={};BIZ_STOCKLOGS={};BIZ_CREDITS={};CLIENTS=[];todayRev={};
+  pinnedUnits={};BIZ_EXP_CATS={};screen='home';
+  showAuthScreen();
+}
+
+// ── Supabase Save/Load ────────────────────────────────────────
+async function saveToSupabase(){
+  if(!currentUser)return;
+  const uid=currentUser.id;
+  const now=new Date().toISOString();
+  const today=new Date().toDateString();
+  try{
+    // user_data (settings + simple arrays)
+    await supa.from('user_data').upsert({
+      user_id:uid,
+      selected_biz:selectedBiz,
+      is_dark:isDark,
+      pinned_units:pinnedUnits||{},
+      today_rev:{...todayRev,_savedAt:now,_savedDate:today},
+      biz_exp_cats:BIZ_EXP_CATS||{},
+      clients:CLIENTS||[],
+      updated_at:now
+    },{onConflict:'user_id'});
+    // per-biz tables
+    const bizKeys=[...new Set([
+      ...Object.keys(BIZ_PRODUCTS),
+      ...Object.keys(BIZ_STOCKS),
+      ...Object.keys(BIZ_LOGS),
+      ...Object.keys(BIZ_EXPLOGS),
+      ...Object.keys(BIZ_CREDITS),
+    ])];
+    for(const k of bizKeys){
+      if(BIZ_PRODUCTS[k]!==undefined)
+        await supa.from('biz_products').upsert({user_id:uid,biz_key:k,data:BIZ_PRODUCTS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+      if(BIZ_STOCKS[k]!==undefined)
+        await supa.from('biz_stocks').upsert({user_id:uid,biz_key:k,data:BIZ_STOCKS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+      if(BIZ_LOGS[k]!==undefined)
+        await supa.from('biz_logs').upsert({user_id:uid,biz_key:k,data:BIZ_LOGS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+      if(BIZ_EXPLOGS[k]!==undefined)
+        await supa.from('biz_explogs').upsert({user_id:uid,biz_key:k,data:BIZ_EXPLOGS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+      if(BIZ_CREDITS[k]!==undefined)
+        await supa.from('biz_credits').upsert({user_id:uid,biz_key:k,data:BIZ_CREDITS[k]||{},updated_at:now},{onConflict:'user_id,biz_key'});
+    }
+    // stocklogs + wastelogs
+    for(const k of Object.keys(BIZ_STOCKLOGS)){
+      await supa.from('biz_stocklogs').upsert({user_id:uid,biz_key:k,data:BIZ_STOCKLOGS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+    }
+    for(const k of Object.keys(BIZ_WASTELOGS)){
+      await supa.from('biz_wastelogs').upsert({user_id:uid,biz_key:k,data:BIZ_WASTELOGS[k]||[],updated_at:now},{onConflict:'user_id,biz_key'});
+    }
+  }catch(e){
+    console.warn('Supabase save failed:',e);
+    // Fallback to localStorage
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({selectedBiz,isDark,BIZ_PRODUCTS,BIZ_STOCKS,BIZ_LOGS,BIZ_EXPLOGS,BIZ_WASTELOGS,BIZ_CREDITS,CLIENTS,todayRev,pinnedUnits,BIZ_STOCKLOGS,BIZ_EXP_CATS,savedAt:now}));}catch(le){}
+  }
+}
+
+async function loadFromSupabase(){
+  if(!currentUser)return false;
+  const uid=currentUser.id;
+  const today=new Date().toDateString();
+  try{
+    // user_data
+    const {data:ud}=await supa.from('user_data').select('*').eq('user_id',uid).single();
+    if(ud){
+      if(ud.selected_biz)selectedBiz=ud.selected_biz;
+      if(ud.is_dark!==undefined)isDark=ud.is_dark;
+      if(ud.pinned_units)pinnedUnits=ud.pinned_units;
+      if(ud.biz_exp_cats)BIZ_EXP_CATS=ud.biz_exp_cats;
+      if(ud.clients)CLIENTS=ud.clients;
+      if(ud.today_rev){
+        const tr=ud.today_rev;
+        const savedDate=tr._savedDate||null;
+        delete tr._savedAt; delete tr._savedDate;
+        todayRev=savedDate===today?tr:{};
+      }
+    }
+    // per-biz tables
+    const[prods,stocks,logs,explogs,credits,stocklogs,wastelogs]=await Promise.all([
+      supa.from('biz_products').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_stocks').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_logs').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_explogs').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_credits').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_stocklogs').select('biz_key,data').eq('user_id',uid),
+      supa.from('biz_wastelogs').select('biz_key,data').eq('user_id',uid),
+    ]);
+    (prods.data||[]).forEach(r=>{BIZ_PRODUCTS[r.biz_key]=r.data;});
+    (stocks.data||[]).forEach(r=>{BIZ_STOCKS[r.biz_key]=r.data;});
+    (logs.data||[]).forEach(r=>{BIZ_LOGS[r.biz_key]=r.data;});
+    (explogs.data||[]).forEach(r=>{BIZ_EXPLOGS[r.biz_key]=r.data;});
+    (credits.data||[]).forEach(r=>{BIZ_CREDITS[r.biz_key]=r.data;});
+    (stocklogs.data||[]).forEach(r=>{BIZ_STOCKLOGS[r.biz_key]=r.data;});
+    (wastelogs.data||[]).forEach(r=>{BIZ_WASTELOGS[r.biz_key]=r.data;});
+    return true;
+  }catch(e){
+    console.warn('Supabase load failed:',e);
+    return false;
+  }
+}
+
+// ── Legacy localStorage (kept as fallback) ────────────────────
+function saveData(){
+  // Fire-and-forget to Supabase; also keep local backup
+  saveToSupabase();
+}
+
+function loadData(){
+  // Legacy fallback only — real load happens via loadFromSupabase()
+  try{
+    const raw=localStorage.getItem(STORAGE_KEY);
+    if(!raw)return false;
+    const d=JSON.parse(raw);
+    if(d.selectedBiz)selectedBiz=d.selectedBiz;
+    if(d.isDark!==undefined)isDark=d.isDark;
+    if(d.BIZ_PRODUCTS)BIZ_PRODUCTS=d.BIZ_PRODUCTS;
+    if(d.BIZ_STOCKS)BIZ_STOCKS=d.BIZ_STOCKS;
+    if(d.BIZ_LOGS)BIZ_LOGS=d.BIZ_LOGS;
+    if(d.BIZ_EXPLOGS)BIZ_EXPLOGS=d.BIZ_EXPLOGS;
+    if(d.BIZ_WASTELOGS)BIZ_WASTELOGS=d.BIZ_WASTELOGS;
+    if(d.BIZ_STOCKLOGS)BIZ_STOCKLOGS=d.BIZ_STOCKLOGS;
+    if(d.BIZ_CREDITS)BIZ_CREDITS=d.BIZ_CREDITS;
+    if(d.CLIENTS)CLIENTS=d.CLIENTS;
+    if(d.pinnedUnits)pinnedUnits=d.pinnedUnits;
+    if(d.BIZ_EXP_CATS)BIZ_EXP_CATS=d.BIZ_EXP_CATS;
+    const today=new Date().toDateString();
+    const savedDate=d.savedAt?new Date(d.savedAt).toDateString():null;
+    if(savedDate&&savedDate===today){if(d.todayRev)todayRev=d.todayRev;}
+    else{todayRev={};}
+    return true;
+  }catch(e){return false;}
 }
 
 function loadData(){
@@ -4444,9 +4659,28 @@ function applyScanned(ctx){
 function updateClock(){const el=document.getElementById('posClock');if(el)el.textContent=new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});}
 
 // ── Startup ──────────────────────────────────────────────────
-loadData();
-if(isDark){document.documentElement.classList.add('dark');const tog=document.getElementById('dmToggle');const lbl=document.getElementById('dmLabel');if(tog)tog.classList.add('dark-on');if(lbl)lbl.textContent='🌙 Dark';}
-render();checkNet();setInterval(checkNet,20000);setInterval(updateClock,1000);updateClock();
+(async()=>{
+  checkNet();setInterval(checkNet,20000);setInterval(updateClock,1000);updateClock();
+  // Check existing session
+  const {data:{session}}=await supa.auth.getSession();
+  if(session&&session.user){
+    currentUser=session.user;
+    await loadFromSupabase();
+    if(isDark){document.documentElement.classList.add('dark');const tog=document.getElementById('dmToggle');const lbl=document.getElementById('dmLabel');if(tog)tog.classList.add('dark-on');if(lbl)lbl.textContent='🌙 Dark';}
+    render();
+  } else {
+    showAuthScreen();
+  }
+  // Listen for auth changes (tab focus, token refresh)
+  supa.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session){
+      currentUser=session.user;
+    } else if(event==='SIGNED_OUT'){
+      currentUser=null;
+      showAuthScreen();
+    }
+  });
+})();
 </script>
 </body>
 </html>
