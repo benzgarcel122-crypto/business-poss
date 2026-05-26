@@ -335,13 +335,8 @@ select.inp{appearance:auto}
       <div class="ptb-s" id="topSub">Your businesses at a glance</div>
     </div>
     <div class="ptb-right">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:1px">
-        <div class="dm-toggle" id="dmToggle" onclick="toggleDark()"><div class="dm-knob"></div></div>
-        <div class="dm-label" id="dmLabel">☀️ Light</div>
-      </div>
       <div class="net-badge online" id="netBadge"><div class="net-dot"></div><span id="netLabel">Online</span></div>
       <div class="pclk" id="posClock">--:--</div>
-      <button onclick="doLogout()" title="Sign out" style="background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;color:var(--text-tertiary)" >🚪</button>
     </div>
   </div>
   <div class="pbody" id="posBody"></div>
@@ -513,6 +508,7 @@ let BIZ_EXPLOGS={};
 let BIZ_WASTELOGS={};
 let BIZ_STOCKLOGS={};
 let BIZ_CREDITS={}; // per-biz utang/credit tracker
+let BIZ_CUSTOM_INFO={}; // per-biz custom name/tagline/address/contact/footer
 
 function initBizData(key){
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[...(DEFAULT_PRODUCTS[key]||[]).map(p=>({...p}))];
@@ -626,7 +622,8 @@ async function doLogout(){
   // Reset all data
   selectedBiz=[];BIZ_PRODUCTS={};BIZ_STOCKS={};BIZ_LOGS={};BIZ_EXPLOGS={};
   BIZ_WASTELOGS={};BIZ_STOCKLOGS={};BIZ_CREDITS={};CLIENTS=[];todayRev={};
-  pinnedUnits={};BIZ_EXP_CATS={};screen='home';
+  pinnedUnits={};BIZ_EXP_CATS={};BIZ_CUSTOM_INFO={};screen='home';
+  localStorage.removeItem(STORAGE_KEY);
   showAuthScreen();
 }
 
@@ -646,6 +643,7 @@ async function saveToSupabase(){
       today_rev:{...todayRev,_savedAt:now,_savedDate:today},
       biz_exp_cats:BIZ_EXP_CATS||{},
       clients:CLIENTS||[],
+      biz_custom_info:BIZ_CUSTOM_INFO||{},
       updated_at:now
     },{onConflict:'user_id'});
     // per-biz tables
@@ -678,7 +676,7 @@ async function saveToSupabase(){
   }catch(e){
     console.warn('Supabase save failed:',e);
     // Fallback to localStorage
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({selectedBiz,isDark,BIZ_PRODUCTS,BIZ_STOCKS,BIZ_LOGS,BIZ_EXPLOGS,BIZ_WASTELOGS,BIZ_CREDITS,CLIENTS,todayRev,pinnedUnits,BIZ_STOCKLOGS,BIZ_EXP_CATS,savedAt:now}));}catch(le){}
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({selectedBiz,isDark,BIZ_PRODUCTS,BIZ_STOCKS,BIZ_LOGS,BIZ_EXPLOGS,BIZ_WASTELOGS,BIZ_CREDITS,CLIENTS,todayRev,pinnedUnits,BIZ_STOCKLOGS,BIZ_EXP_CATS,BIZ_CUSTOM_INFO,savedAt:now}));}catch(le){}
   }
 }
 
@@ -695,6 +693,7 @@ async function loadFromSupabase(){
       if(ud.pinned_units)pinnedUnits=ud.pinned_units;
       if(ud.biz_exp_cats)BIZ_EXP_CATS=ud.biz_exp_cats;
       if(ud.clients)CLIENTS=ud.clients;
+      if(ud.biz_custom_info)BIZ_CUSTOM_INFO=ud.biz_custom_info;
       if(ud.today_rev){
         const tr=ud.today_rev;
         const savedDate=tr._savedDate||null;
@@ -750,6 +749,7 @@ function loadData(){
     if(d.CLIENTS)CLIENTS=d.CLIENTS;
     if(d.pinnedUnits)pinnedUnits=d.pinnedUnits;
     if(d.BIZ_EXP_CATS)BIZ_EXP_CATS=d.BIZ_EXP_CATS;
+    if(d.BIZ_CUSTOM_INFO)BIZ_CUSTOM_INFO=d.BIZ_CUSTOM_INFO;
     const today=new Date().toDateString();
     const savedDate=d.savedAt?new Date(d.savedAt).toDateString():null;
     if(savedDate&&savedDate===today){if(d.todayRev)todayRev=d.todayRev;}
@@ -775,6 +775,7 @@ function loadData(){
     if(d.CLIENTS)CLIENTS=d.CLIENTS;
     if(d.pinnedUnits)pinnedUnits=d.pinnedUnits;
     if(d.BIZ_EXP_CATS)BIZ_EXP_CATS=d.BIZ_EXP_CATS;
+    if(d.BIZ_CUSTOM_INFO)BIZ_CUSTOM_INFO=d.BIZ_CUSTOM_INFO;
 
     const today=new Date().toDateString();
 
@@ -828,7 +829,7 @@ const dateKey=()=>new Date().toDateString(); // e.g. "Thu May 14 2026" — used 
 const uid=()=>Date.now()+Math.floor(Math.random()*9999);
 const txn=()=>'TXN-'+Date.now().toString().slice(-6);
 
-function toggleDark(){isDark=!isDark;document.documentElement.classList.toggle('dark',isDark);const tog=document.getElementById('dmToggle');const lbl=document.getElementById('dmLabel');if(tog)tog.classList.toggle('dark-on',isDark);if(lbl)lbl.textContent=isDark?'🌙 Dark':'☀️ Light';saveData();}
+function toggleDark(){isDark=!isDark;document.documentElement.classList.toggle('dark',isDark);saveData();}
 function setNetStatus(online){const badge=document.getElementById('netBadge');const label=document.getElementById('netLabel');if(!badge||!label)return;badge.className='net-badge '+(online?'online':'offline');label.textContent=online?'Online':'Offline';}
 function checkNet(){const img=new Image();const timer=setTimeout(()=>{img.src='';setNetStatus(false);},3000);img.onload=()=>{clearTimeout(timer);setNetStatus(true);};img.onerror=()=>{clearTimeout(timer);setNetStatus(navigator.onLine);};img.src='https://www.gstatic.com/generate_204?_='+Date.now();}
 window.addEventListener('online',()=>{setNetStatus(true);checkNet();});
@@ -2057,14 +2058,16 @@ function buildOthers(key){
     {id:'reports',label:'📊 Reports'},
     {id:'receipt',label:'🧾 Receipt'},
     {id:'credits',label:'💳 Credits'},
+    {id:'settings',label:'⚙️ Settings'},
   ];
-  const tabRow=`<div class="subtab-row" style="overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none">${tabs.map(t=>`<div class="subtab${sub===t.id?' act':''}" style="flex-shrink:0" onclick="othersSubTab['${key}']='${t.id}';render()">${t.label}</div>`).join('')}</div>`;
+  const tabRow=`<div class="subtab-row" style="overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none">${tabs.map(t=>`<div class="subtab${sub===t.id?' act':''}\" style="flex-shrink:0" onclick="othersSubTab['${key}']='${t.id}';render()">${t.label}</div>`).join('')}</div>`;
   let content='';
   if(sub==='inventory')content=buildInventoryContent(key);
   else if(sub==='expenses')content=buildExpensesContent(key);
   else if(sub==='reports')content=buildReportsContent(key);
   else if(sub==='receipt')content=buildReceiptContent(key);
   else if(sub==='credits')content=buildCreditsContent(key);
+  else if(sub==='settings')content=buildSettingsContent(key);
   return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><button class="bk" onclick="goScreen('home')">← Hub</button>${tabRow}${content}</div>`;
 }
 
@@ -2504,7 +2507,10 @@ function buildReceiptHtml(biz,log,key){
   const uid=`receipt-soldto-${key||'x'}`;
   return`
     <div id="print-receipt-area" data-logid="${log.id||''}" data-key="${key||''}" style="background:#fff;color:#000;font-family:Arial,sans-serif;padding:16px;border:0.5px solid var(--border-secondary);border-radius:var(--radius)">
-      <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.04em;margin-bottom:14px;text-transform:uppercase">BUSINESS NAME</div>
+      <div style="text-align:center;font-weight:800;font-size:16px;letter-spacing:.04em;margin-bottom:2px;text-transform:uppercase">${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].name)||biz?.name||'BUSINESS NAME'}</div>
+      ${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].tagline)?`<div style="text-align:center;font-size:11px;color:#555;margin-bottom:4px">${BIZ_CUSTOM_INFO[key].tagline}</div>`:''}
+      ${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].address)?`<div style="text-align:center;font-size:11px;color:#555;margin-bottom:4px">${BIZ_CUSTOM_INFO[key].address}</div>`:''}
+      ${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].contact)?`<div style="text-align:center;font-size:11px;color:#555;margin-bottom:10px">${BIZ_CUSTOM_INFO[key].contact}</div>`:'<div style="margin-bottom:10px"></div>'}
       <div style="display:flex;justify-content:flex-end;margin-bottom:8px;font-size:13px">
         Date&nbsp;<span style="border-bottom:1px solid #333;min-width:110px;display:inline-block;padding:0 4px">${dateStr}</span>
       </div>
@@ -2527,9 +2533,10 @@ function buildReceiptHtml(biz,log,key){
       </table>
       ${log.discount?`<div style="text-align:right;font-size:12px;color:#c00;margin-top:4px">Discount: −₱${(log.discount.amt||0).toFixed(2)}</div>`:''}
       <div data-payment style="text-align:right;font-size:12px;color:#555;margin-top:4px">${log.method==='Credit Payment'&&log.isPartial?'Partial Credit Payment':log.method||'Cash'}</div>
-      <div style="text-align:center;margin-top:18px;font-size:13px">
+      ${(BIZ_CUSTOM_INFO[key]?.showSig!==false)?`<div style="text-align:center;margin-top:18px;font-size:13px">
         SIGNATURE&nbsp;<span style="border-bottom:1px solid #333;display:inline-block;min-width:160px">&nbsp;</span>
-      </div>
+      </div>`:''}
+      ${(BIZ_CUSTOM_INFO[key]?.footer)?`<div style="text-align:center;font-size:11px;color:#777;margin-top:10px">${BIZ_CUSTOM_INFO[key].footer}</div>`:''}
     </div>
     <div style="display:flex;gap:2px;margin-top:10px">
       <button id="print-btn-${key}" ${_savedName?'':'disabled'} style="flex:1;padding:13px;font-size:14px;font-weight:700;background:#1a6f3c;color:#fff;border:none;border-radius:8px 0 0 8px;font-family:inherit;-webkit-appearance:none;${_savedName?'cursor:pointer;opacity:1':'cursor:not-allowed;opacity:0.45'}"
@@ -2593,13 +2600,17 @@ th{font-weight:700;background:#f0f0f0;font-size:9px}
 }
 </style></head>
 <body>
-<h1>BUSINESS NAME</h1>
+<h1>${(BIZ_CUSTOM_INFO[aKey]&&BIZ_CUSTOM_INFO[aKey].name)||getBizInfo(aKey)?.name||'BUSINESS NAME'}</h1>
+${(BIZ_CUSTOM_INFO[aKey]&&BIZ_CUSTOM_INFO[aKey].tagline)?`<div style="text-align:center;font-size:9px;color:#555;margin-bottom:2px">${BIZ_CUSTOM_INFO[aKey].tagline}</div>`:''}
+${(BIZ_CUSTOM_INFO[aKey]&&BIZ_CUSTOM_INFO[aKey].address)?`<div style="text-align:center;font-size:9px;color:#555;margin-bottom:2px">${BIZ_CUSTOM_INFO[aKey].address}</div>`:''}
+${(BIZ_CUSTOM_INFO[aKey]&&BIZ_CUSTOM_INFO[aKey].contact)?`<div style="text-align:center;font-size:9px;color:#555;margin-bottom:6px">${BIZ_CUSTOM_INFO[aKey].contact}</div>`:''}
 <div class="date-row">Date&nbsp;<span class="date-val">${dateStr}</span></div>
 <div class="soldto-row">SOLD TO&nbsp;<span class="soldto-val">${soldToName}</span></div>
 ${tableHTML}
 ${discountLine}
 <div class="payment">Payment: ${paymentText}</div>
-<div class="sig-row">SIGNATURE&nbsp;<span class="sig-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
+${(BIZ_CUSTOM_INFO[aKey]?.showSig!==false)?`<div class="sig-row">SIGNATURE&nbsp;<span class="sig-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></div>`:''}
+${(BIZ_CUSTOM_INFO[aKey]&&BIZ_CUSTOM_INFO[aKey].footer)?`<div style="text-align:center;font-size:9px;color:#777;margin-top:8px">${BIZ_CUSTOM_INFO[aKey].footer}</div>`:''}
 <script>window.onload=function(){window.print();}<\/script>
 </body></html>`;
 
@@ -2672,7 +2683,7 @@ function doPrintAll(key){
     }
     const disc=l.discount&&l.discount.amt>0?`<div style="text-align:right;font-size:7px;color:#c00">Disc: -\u20b1${(l.discount.amt||0).toFixed(2)}</div>`:'';
     return`<div class="receipt-box">
-      <div class="rbiz">BUSINESS NAME</div>
+      <div class="rbiz">${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].name)||getBizInfo(key)?.name||'BUSINESS NAME'}</div>
       <div class="rdate">Date <span class="rval">${dateStr}</span></div>
       <div class="rsold">SOLD TO <span class="rval">${soldTo}</span></div>
       <table><thead><tr><th>UNIT</th><th>QTY</th><th>ARTICLES</th><th>PRICE</th><th>AMT</th></tr></thead><tbody>${rows}</tbody></table>
@@ -3016,6 +3027,144 @@ function doRemoveCredit(key,id){
   render();
   restoreCreditSearch(key);
   setTimeout(()=>toast(`Credit cancelled — stock returned ✓`),50);
+}
+
+// ── ⚙️ SETTINGS ──────────────────────────────────────────────────
+function buildSettingsContent(key){
+  const info=BIZ_CUSTOM_INFO[key]||{};
+  const biz=getBizInfo(key);
+  const email=currentUser?.email||'—';
+  return`
+  <div style="padding:4px 0 80px">
+
+    <!-- ACCOUNT -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">👤 Account</div>
+      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px">
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:2px">Logged in as</div>
+        <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${email}</div>
+      </div>
+      <button class="btn-c" style="width:100%;margin-bottom:6px" onclick="showChangePassword()">🔑 Change Password</button>
+      <button class="btn-d" style="width:100%" onclick="doLogout()">🚪 Log Out</button>
+    </div>
+
+    <!-- APPEARANCE -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🎨 Appearance</div>
+      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;font-weight:600;color:var(--text-primary)">${isDark?'🌙 Dark Mode':'☀️ Light Mode'}</span>
+        <div class="dm-toggle${isDark?' dark-on':''}" onclick="toggleDark();render()" style="cursor:pointer"><div class="dm-knob"></div></div>
+      </div>
+    </div>
+
+    <!-- BUSINESS INFO -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🏢 Business Info <span style="font-weight:400;font-size:10px;color:var(--text-tertiary)">(used on receipts)</span></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Business Name</div>
+          <input class="inp" id="si-name-${key}" placeholder="${biz?.name||'Enter business name'}" value="${info.name||''}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Tagline / Description</div>
+          <input class="inp" id="si-tagline-${key}" placeholder="e.g. Print, xerox, lamination" value="${info.tagline||''}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Address</div>
+          <input class="inp" id="si-address-${key}" placeholder="e.g. Brgy. San Jose, Cebu City" value="${info.address||''}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Contact Number</div>
+          <input class="inp" id="si-contact-${key}" placeholder="e.g. 0912-345-6789" value="${info.contact||''}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Receipt Footer Message</div>
+          <input class="inp" id="si-footer-${key}" placeholder="e.g. Thank you for your business!" value="${info.footer||''}" style="width:100%">
+        </div>
+        <button class="btn-s" style="width:100%;margin-top:4px" onclick="saveBusinessInfo('${key}')">💾 Save Business Info</button>
+      </div>
+    </div>
+
+    <!-- MANAGE BUSINESSES -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🏪 Manage Businesses</div>
+      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:10px 14px;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Active businesses:</div>
+        ${selectedBiz.map(k=>{const b=getBizInfo(k);return`<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-secondary)"><span style="font-size:13px">${b?.icon||'🏪'} ${(BIZ_CUSTOM_INFO[k]&&BIZ_CUSTOM_INFO[k].name)||b?.name||k}</span><button style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;padding:2px 6px" onclick="confirmRemoveBiz('${k}')">Remove</button></div>`;}).join('')}
+      </div>
+      <button class="btn-c" style="width:100%" onclick="goScreen('home');setTimeout(()=>{const b=document.querySelector('.add-biz-btn');if(b)b.click();},100)">＋ Add Business</button>
+    </div>
+
+    <!-- RECEIPT SETTINGS -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🖨️ Receipt Settings</div>
+      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:13px;color:var(--text-primary)">Show Signature Line</span>
+        <input type="checkbox" id="si-sig-${key}" ${(info.showSig!==false)?'checked':''} onchange="saveBusinessInfo('${key}')" style="width:18px;height:18px;cursor:pointer">
+      </div>
+    </div>
+
+    <!-- DANGER ZONE -->
+    <div style="margin-bottom:18px">
+      <div style="font-size:11px;font-weight:700;color:var(--danger);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">⚠️ Danger Zone</div>
+      <button class="btn-d" style="width:100%" onclick="confirmClearBiz('${key}')">🗑️ Clear All Data for This Business</button>
+    </div>
+
+  </div>`;
+}
+
+function saveBusinessInfo(key){
+  const name=document.getElementById('si-name-'+key)?.value.trim()||'';
+  const tagline=document.getElementById('si-tagline-'+key)?.value.trim()||'';
+  const address=document.getElementById('si-address-'+key)?.value.trim()||'';
+  const contact=document.getElementById('si-contact-'+key)?.value.trim()||'';
+  const footer=document.getElementById('si-footer-'+key)?.value.trim()||'';
+  const showSig=document.getElementById('si-sig-'+key)?.checked!==false;
+  BIZ_CUSTOM_INFO[key]={name,tagline,address,contact,footer,showSig};
+  saveData();
+  toast('Business info saved ✓');
+}
+
+function showChangePassword(){
+  modal(`<div class="modal-t">Change Password</div>
+    <input class="inp" id="cp-new" type="password" placeholder="New password" style="margin-bottom:8px;width:100%">
+    <input class="inp" id="cp-confirm" type="password" placeholder="Confirm new password" style="margin-bottom:12px;width:100%">
+    <div class="mbtnrow">
+      <button class="btn-c" onclick="rmModal()">Cancel</button>
+      <button class="btn-s" onclick="doChangePassword()">Update Password</button>
+    </div>`);
+  setTimeout(()=>document.getElementById('cp-new')?.focus(),100);
+}
+
+async function doChangePassword(){
+  const np=document.getElementById('cp-new')?.value||'';
+  const cp=document.getElementById('cp-confirm')?.value||'';
+  if(!np){toast('Enter a new password','err');return;}
+  if(np!==cp){toast('Passwords do not match','err');return;}
+  if(np.length<6){toast('Password must be at least 6 characters','err');return;}
+  const {error}=await supa.auth.updateUser({password:np});
+  if(error){toast('Error: '+error.message,'err');return;}
+  rmModal();
+  toast('Password updated successfully ✓');
+}
+
+function confirmClearBiz(key){
+  const b=getBizInfo(key);
+  modal(`<div class="modal-t" style="color:var(--danger)">Clear All Data?</div>
+    <div class="modal-sub">This will permanently delete all sales, expenses, stock, and credit data for <strong>${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].name)||b?.name||key}</strong>.<br><br>⚠️ This cannot be undone.</div>
+    <div class="mbtnrow">
+      <button class="btn-c" onclick="rmModal()">Cancel</button>
+      <button class="btn-d" onclick="doClearBiz('${key}')">Yes, Clear Everything</button>
+    </div>`);
+}
+
+function doClearBiz(key){
+  BIZ_LOGS[key]=[];BIZ_EXPLOGS[key]=[];BIZ_STOCKS[key]=[];
+  BIZ_STOCKLOGS[key]=[];BIZ_WASTELOGS[key]=[];BIZ_CREDITS[key]=[];
+  BIZ_PRODUCTS[key]=[];todayRev[key]=0;
+  try{localStorage.removeItem('printedReceipts_'+key);localStorage.removeItem('lastReceipt_'+key);}catch(e){}
+  saveData();rmModal();render();
+  setTimeout(()=>toast('All data cleared for this business ✓'),50);
 }
 
 function buildInternetScreen(key,tab){
@@ -4666,7 +4815,7 @@ function updateClock(){const el=document.getElementById('posClock');if(el)el.tex
   if(session&&session.user){
     currentUser=session.user;
     await loadFromSupabase();
-    if(isDark){document.documentElement.classList.add('dark');const tog=document.getElementById('dmToggle');const lbl=document.getElementById('dmLabel');if(tog)tog.classList.add('dark-on');if(lbl)lbl.textContent='🌙 Dark';}
+    if(isDark){document.documentElement.classList.add('dark');}
     render();
   } else {
     showAuthScreen();
