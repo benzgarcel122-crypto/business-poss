@@ -2060,7 +2060,7 @@ function buildOthers(key){
     {id:'credits',label:'💳 Credits'},
     {id:'settings',label:'⚙️ Settings'},
   ];
-  const tabRow=`<div class="subtab-row" style="overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none">${tabs.map(t=>`<div class="subtab${sub===t.id?' act':''}\" style="flex-shrink:0" onclick="othersSubTab['${key}']='${t.id}';render()">${t.label}</div>`).join('')}</div>`;
+  const tabRow=`<div class="subtab-row" style="overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;-webkit-overflow-scrolling:touch">${tabs.map(t=>`<div class="subtab${sub===t.id?' act':''}" style="flex-shrink:0;white-space:nowrap" onclick="othersSubTab['${key}']='${t.id}';render()">${t.label}</div>`).join('')}</div>`;
   let content='';
   if(sub==='inventory')content=buildInventoryContent(key);
   else if(sub==='expenses')content=buildExpensesContent(key);
@@ -3034,11 +3034,14 @@ function buildSettingsContent(key){
   const info=BIZ_CUSTOM_INFO[key]||{};
   const biz=getBizInfo(key);
   const email=currentUser?.email||'—';
+  const bizOpen=window._settingsBizOpen&&window._settingsBizOpen[key];
+  const manageBizOpen=window._settingsManageBizOpen&&window._settingsManageBizOpen[key];
+  const receiptOpen=window._settingsReceiptOpen&&window._settingsReceiptOpen[key];
   return`
   <div style="padding:4px 0 80px">
 
     <!-- ACCOUNT -->
-    <div style="margin-bottom:18px">
+    <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">👤 Account</div>
       <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px">
         <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:2px">Logged in as</div>
@@ -3049,7 +3052,7 @@ function buildSettingsContent(key){
     </div>
 
     <!-- APPEARANCE -->
-    <div style="margin-bottom:18px">
+    <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🎨 Appearance</div>
       <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:13px;font-weight:600;color:var(--text-primary)">${isDark?'🌙 Dark Mode':'☀️ Light Mode'}</span>
@@ -3057,17 +3060,17 @@ function buildSettingsContent(key){
       </div>
     </div>
 
-    <!-- BUSINESS INFO -->
-    <div style="margin-bottom:18px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🏢 Business Info <span style="font-weight:400;font-size:10px;color:var(--text-tertiary)">(used on receipts)</span></div>
-      <div style="display:flex;flex-direction:column;gap:8px">
+    <!-- BUSINESS INFO (collapsible) -->
+    <div style="margin-bottom:12px">
+      <div onclick="if(!window._settingsBizOpen)window._settingsBizOpen={};window._settingsBizOpen['${key}']=!window._settingsBizOpen['${key}'];render()"
+        style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-secondary);border-radius:${bizOpen?'var(--radius) var(--radius) 0 0':'var(--radius)'};padding:12px 14px;cursor:pointer;border-bottom:${bizOpen?'1px solid var(--border-secondary)':'none'}">
+        <span style="font-size:13px;font-weight:700;color:var(--text-primary)">🏢 Business Info <span style="font-weight:400;font-size:11px;color:var(--text-tertiary)">(used on receipts)</span></span>
+        <span style="font-size:16px;color:var(--text-tertiary);transition:transform .2s;display:inline-block;transform:${bizOpen?'rotate(180deg)':'rotate(0deg)'}"">▾</span>
+      </div>
+      ${bizOpen?`<div style="background:var(--bg-secondary);border-radius:0 0 var(--radius) var(--radius);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
         <div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Business Name</div>
           <input class="inp" id="si-name-${key}" placeholder="${biz?.name||'Enter business name'}" value="${info.name||''}" style="width:100%">
-        </div>
-        <div>
-          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Tagline / Description</div>
-          <input class="inp" id="si-tagline-${key}" placeholder="e.g. Print, xerox, lamination" value="${info.tagline||''}" style="width:100%">
         </div>
         <div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Address</div>
@@ -3077,31 +3080,35 @@ function buildSettingsContent(key){
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Contact Number</div>
           <input class="inp" id="si-contact-${key}" placeholder="e.g. 0912-345-6789" value="${info.contact||''}" style="width:100%">
         </div>
-        <div>
-          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Receipt Footer Message</div>
-          <input class="inp" id="si-footer-${key}" placeholder="e.g. Thank you for your business!" value="${info.footer||''}" style="width:100%">
-        </div>
         <button class="btn-s" style="width:100%;margin-top:4px" onclick="saveBusinessInfo('${key}')">💾 Save Business Info</button>
-      </div>
+      </div>`:''}
     </div>
 
-    <!-- MANAGE BUSINESSES -->
-    <div style="margin-bottom:18px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🏪 Manage Businesses</div>
-      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:10px 14px;margin-bottom:8px">
+    <!-- MANAGE BUSINESSES (collapsible) -->
+    <div style="margin-bottom:12px">
+      <div onclick="if(!window._settingsManageBizOpen)window._settingsManageBizOpen={};window._settingsManageBizOpen['${key}']=!window._settingsManageBizOpen['${key}'];render()"
+        style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-secondary);border-radius:${manageBizOpen?'var(--radius) var(--radius) 0 0':'var(--radius)'};padding:12px 14px;cursor:pointer;border-bottom:${manageBizOpen?'1px solid var(--border-secondary)':'none'}">
+        <span style="font-size:13px;font-weight:700;color:var(--text-primary)">🏪 Manage Businesses</span>
+        <span style="font-size:16px;color:var(--text-tertiary);display:inline-block;transform:${manageBizOpen?'rotate(180deg)':'rotate(0deg)'}"">▾</span>
+      </div>
+      ${manageBizOpen?`<div style="background:var(--bg-secondary);border-radius:0 0 var(--radius) var(--radius);padding:10px 14px">
         <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">Active businesses:</div>
-        ${selectedBiz.map(k=>{const b=getBizInfo(k);return`<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border-secondary)"><span style="font-size:13px">${b?.icon||'🏪'} ${(BIZ_CUSTOM_INFO[k]&&BIZ_CUSTOM_INFO[k].name)||b?.name||k}</span><button style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;padding:2px 6px" onclick="confirmRemoveBiz('${k}')">Remove</button></div>`;}).join('')}
-      </div>
-      <button class="btn-c" style="width:100%" onclick="goScreen('home');setTimeout(()=>{const b=document.querySelector('.add-biz-btn');if(b)b.click();},100)">＋ Add Business</button>
+        ${selectedBiz.map(k=>{const b=getBizInfo(k);return`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-secondary)"><span style="font-size:13px">${b?.icon||'🏪'} ${(BIZ_CUSTOM_INFO[k]&&BIZ_CUSTOM_INFO[k].name)||b?.name||k}</span><button style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;padding:2px 6px" onclick="confirmRemoveBiz('${k}')">Remove</button></div>`;}).join('')}
+        <button class="btn-c" style="width:100%;margin-top:10px" onclick="goScreen('home');setTimeout(()=>{const b=document.querySelector('.add-biz-btn');if(b)b.click();},100)">＋ Add Business</button>
+      </div>`:''}
     </div>
 
-    <!-- RECEIPT SETTINGS -->
-    <div style="margin-bottom:18px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🖨️ Receipt Settings</div>
-      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
+    <!-- RECEIPT SETTINGS (collapsible) -->
+    <div style="margin-bottom:12px">
+      <div onclick="if(!window._settingsReceiptOpen)window._settingsReceiptOpen={};window._settingsReceiptOpen['${key}']=!window._settingsReceiptOpen['${key}'];render()"
+        style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-secondary);border-radius:${receiptOpen?'var(--radius) var(--radius) 0 0':'var(--radius)'};padding:12px 14px;cursor:pointer;border-bottom:${receiptOpen?'1px solid var(--border-secondary)':'none'}">
+        <span style="font-size:13px;font-weight:700;color:var(--text-primary)">🖨️ Receipt Settings</span>
+        <span style="font-size:16px;color:var(--text-tertiary);display:inline-block;transform:${receiptOpen?'rotate(180deg)':'rotate(0deg)'}"">▾</span>
+      </div>
+      ${receiptOpen?`<div style="background:var(--bg-secondary);border-radius:0 0 var(--radius) var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:13px;color:var(--text-primary)">Show Signature Line</span>
         <input type="checkbox" id="si-sig-${key}" ${(info.showSig!==false)?'checked':''} onchange="saveBusinessInfo('${key}')" style="width:18px;height:18px;cursor:pointer">
-      </div>
+      </div>`:''}
     </div>
 
     <!-- DANGER ZONE -->
@@ -3115,33 +3122,41 @@ function buildSettingsContent(key){
 
 function saveBusinessInfo(key){
   const name=document.getElementById('si-name-'+key)?.value.trim()||'';
-  const tagline=document.getElementById('si-tagline-'+key)?.value.trim()||'';
   const address=document.getElementById('si-address-'+key)?.value.trim()||'';
   const contact=document.getElementById('si-contact-'+key)?.value.trim()||'';
-  const footer=document.getElementById('si-footer-'+key)?.value.trim()||'';
   const showSig=document.getElementById('si-sig-'+key)?.checked!==false;
-  BIZ_CUSTOM_INFO[key]={name,tagline,address,contact,footer,showSig};
+  BIZ_CUSTOM_INFO[key]={...( BIZ_CUSTOM_INFO[key]||{}),name,address,contact,showSig};
   saveData();
   toast('Business info saved ✓');
 }
 
 function showChangePassword(){
   modal(`<div class="modal-t">Change Password</div>
-    <input class="inp" id="cp-new" type="password" placeholder="New password" style="margin-bottom:8px;width:100%">
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:10px">Verify your current password before setting a new one.</div>
+    <input class="inp" id="cp-current" type="password" placeholder="Current password" style="margin-bottom:8px;width:100%">
+    <input class="inp" id="cp-new" type="password" placeholder="New password (min 6 characters)" style="margin-bottom:8px;width:100%">
     <input class="inp" id="cp-confirm" type="password" placeholder="Confirm new password" style="margin-bottom:12px;width:100%">
     <div class="mbtnrow">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
       <button class="btn-s" onclick="doChangePassword()">Update Password</button>
     </div>`);
-  setTimeout(()=>document.getElementById('cp-new')?.focus(),100);
+  setTimeout(()=>document.getElementById('cp-current')?.focus(),100);
 }
 
 async function doChangePassword(){
+  const cur=document.getElementById('cp-current')?.value||'';
   const np=document.getElementById('cp-new')?.value||'';
   const cp=document.getElementById('cp-confirm')?.value||'';
+  if(!cur){toast('Enter your current password','err');return;}
   if(!np){toast('Enter a new password','err');return;}
-  if(np!==cp){toast('Passwords do not match','err');return;}
   if(np.length<6){toast('Password must be at least 6 characters','err');return;}
+  if(np!==cp){toast('New passwords do not match','err');return;}
+  if(np===cur){toast('New password must be different from current','err');return;}
+  // Re-authenticate with current password first
+  const email=currentUser?.email||'';
+  const {error:signInErr}=await supa.auth.signInWithPassword({email,password:cur});
+  if(signInErr){toast('Current password is incorrect','err');return;}
+  // Now update to new password
   const {error}=await supa.auth.updateUser({password:np});
   if(error){toast('Error: '+error.message,'err');return;}
   rmModal();
