@@ -3347,9 +3347,18 @@ function addToCart(key,id){
       cart[key][cartKey].qty++;
       const variantId=cartKey.split('__v')[1];
       const variant=s.variants.find(v=>v.id===variantId);
-      if(variant?.stockId){
+      if(variant){
         if(!stockReservations[key])stockReservations[key]={};
-        stockReservations[key][String(variant.stockId)]=(stockReservations[key][String(variant.stockId)]||0)+1;
+        const recipe=variant.recipe||[];
+        if(recipe.length>0){
+          recipe.forEach(r=>{
+            if(!r.stockId)return;
+            const sid=String(r.stockId);
+            stockReservations[key][sid]=(stockReservations[key][sid]||0)+(r.qty||1);
+          });
+        } else if(variant.stockId){
+          stockReservations[key][String(variant.stockId)]=(stockReservations[key][String(variant.stockId)]||0)+1;
+        }
       }
       if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
       return;
@@ -3372,28 +3381,38 @@ function adjQty(key,id,d){
   const isVariant=String(id).includes('__v');
   const oldQty=cart[key][id].qty;
   cart[key][id].qty+=d;
-  if(cart[key][id].qty<=0){
-    if(isVariant){
-      const variantStockId=cart[key][id]?.variantStockId;
-      if(variantStockId&&stockReservations[key]){
-        const sid=String(variantStockId);
-        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-oldQty);
+
+  if(isVariant){
+    const variantId=cart[key][id]?.variantId;
+    const prodId=cart[key][id]?.prodId;
+    const prod=prods.find(x=>String(x.id)===String(prodId));
+    const variant=prod?.variants?.find(v=>v.id===variantId);
+    if(!stockReservations[key])stockReservations[key]={};
+    const releaseVariant=(v,amount)=>{
+      const recipe=v?.recipe||[];
+      if(recipe.length>0){
+        recipe.forEach(r=>{
+          if(!r.stockId)return;
+          const sid=String(r.stockId);
+          stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+(r.qty||1)*amount);
+        });
+      } else if(v?.stockId){
+        const sid=String(v.stockId);
+        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+amount);
       }
+    };
+    if(cart[key][id].qty<=0){
+      if(variant)releaseVariant(variant,-oldQty);
+      delete cart[key][id];
     } else {
-      const s=prods.find(x=>String(x.id)===String(id));
-      if(s)reserveIngredients(key,s,-oldQty);
+      if(variant)releaseVariant(variant,d);
     }
-    delete cart[key][id];
   } else {
-    if(isVariant){
-      const variantStockId=cart[key][id]?.variantStockId;
-      if(variantStockId&&stockReservations[key]){
-        const sid=String(variantStockId);
-        stockReservations[key][sid]=(stockReservations[key][sid]||0)+d;
-        if(stockReservations[key][sid]<0)stockReservations[key][sid]=0;
-      }
+    const s=prods.find(x=>String(x.id)===String(id));
+    if(cart[key][id]&&cart[key][id].qty<=0){
+      if(s)reserveIngredients(key,s,-oldQty);
+      delete cart[key][id];
     } else {
-      const s=prods.find(x=>String(x.id)===String(id));
       if(s)reserveIngredients(key,s,d);
     }
   }
@@ -3420,15 +3439,25 @@ function removeFromCart(key,id){
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
   const qty=cart[key][id]?.qty||0;
+  if(!stockReservations[key])stockReservations[key]={};
+
   if(isVariant){
-    // Release variant stock reservation
-    const variantStockId=cart[key][id]?.variantStockId;
-    if(variantStockId&&stockReservations[key]){
-      const sid=String(variantStockId);
+    const variantId=cart[key][id]?.variantId;
+    const prodId=cart[key][id]?.prodId;
+    const prod=prods.find(x=>String(x.id)===String(prodId));
+    const variant=prod?.variants?.find(v=>v.id===variantId);
+    const recipe=variant?.recipe||[];
+    if(recipe.length>0){
+      recipe.forEach(r=>{
+        if(!r.stockId)return;
+        const sid=String(r.stockId);
+        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-(r.qty||1)*qty);
+      });
+    } else if(variant?.stockId){
+      const sid=String(variant.stockId);
       stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
     }
   } else {
-    // Normal product — release ingredient reservations
     const s=prods.find(x=>String(x.id)===String(id));
     if(s&&qty>0)reserveIngredients(key,s,-qty);
   }
@@ -4016,14 +4045,39 @@ function showVariantSheet(key,prodId,cartLineId){
   const currentVariantId=cartLineId?cartLineId.split('__v')[1]:'';
 
   const pills=variants.map(v=>{
-    const stockItem=v.stockId?stk.find(s=>String(s.id)===String(v.stockId)):null;
-    const smry=stockItem?getStockSummary(key,stockItem.name):null;
-    const specAmt=smry?.specAmt||0;
-    const qty=specAmt>0?Math.round(smry.qty*specAmt*1000)/1000:Math.floor(smry?.qty||0);
-    const isOut=stockItem&&smry&&qty<=0;
+    // Compute available stock from recipe (use the most limiting ingredient)
+    const recipe=v.recipe||[];
+    let stockStr='';
+    let isOut=false;
+    if(recipe.length>0){
+      // Find minimum available across all recipe ingredients
+      let minAvail=Infinity;
+      recipe.forEach(r=>{
+        if(!r.stockId)return;
+        const stockItem=stk.find(s=>String(s.id)===String(r.stockId));
+        if(!stockItem)return;
+        const smry=getStockSummary(key,stockItem.name);
+        const specAmt=smry?.specAmt||0;
+        const rawQty=specAmt>0?Math.round(smry.qty*specAmt*1000)/1000:Math.floor(smry?.qty||0);
+        const reserved=(stockReservations[key]?.[String(r.stockId)]||0);
+        const avail=Math.max(0,rawQty-reserved);
+        const canMake=r.qty>0?Math.floor(avail/r.qty):avail;
+        if(canMake<minAvail)minAvail=canMake;
+      });
+      if(minAvail===Infinity)minAvail=0;
+      isOut=minAvail<=0;
+      stockStr=isOut?'Out of stock':`${minAvail} left`;
+    } else if(v.stockId){
+      // Fallback single stock link
+      const stockItem=stk.find(s=>String(s.id)===String(v.stockId));
+      const smry=stockItem?getStockSummary(key,stockItem.name):null;
+      const specAmt=smry?.specAmt||0;
+      const qty=specAmt>0?Math.round(smry.qty*specAmt*1000)/1000:Math.floor(smry?.qty||0);
+      isOut=stockItem&&smry&&qty<=0;
+      stockStr=stockItem?(isOut?'Out of stock':`${qty} left`):'';
+    }
     const priceAdj=parseFloat(v.priceAdj)||0;
     const adjStr=priceAdj>0?`+₱${priceAdj}`:priceAdj<0?`-₱${Math.abs(priceAdj)}`:'';
-    const stockStr=stockItem?(isOut?'Out of stock':`${qty} left`):'';
     const isSel=v.id===currentVariantId;
     return`<div class="vpill${isSel?' sel':''}${isOut?' out':''}"
       onclick="${isOut?'':` pickVariant('${key}',${prodId},'${v.id}','${cartLineId||''}')`}">
@@ -4066,36 +4120,48 @@ function pickVariant(key,prodId,variantId,cartLineId){
   const variant=prod.variants.find(v=>v.id===variantId);
   if(!variant)return;
 
-  // Cart key = prodId__vVariantId to allow multiple variants of same product
-  const newCartKey=`${prodId}__v${variantId}`;
   if(!cart[key])cart[key]={};
+  if(!stockReservations[key])stockReservations[key]={};
 
-  // If switching an existing cart line — remove old, keep qty
+  // Helper: reserve or release a variant's recipe ingredients
+  function reserveVariantRecipe(v,direction,amount){
+    const recipe=v.recipe||[];
+    if(recipe.length>0){
+      recipe.forEach(r=>{
+        if(!r.stockId)return;
+        const sid=String(r.stockId);
+        const deductAmt=(r.qty||1)*amount*direction;
+        stockReservations[key][sid]=(stockReservations[key][sid]||0)+deductAmt;
+        if(stockReservations[key][sid]<0)stockReservations[key][sid]=0;
+      });
+    } else if(v.stockId){
+      // Fallback: single stock link
+      const sid=String(v.stockId);
+      stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+(direction*amount));
+    }
+  }
+
+  // SWITCH mode — remove old cart line, transfer its qty
   let qty=1;
-  if(cartLineId&&cartLineId!==newCartKey&&cart[key][cartLineId]){
+  if(cartLineId&&cartLineId!==`${prodId}__v${variantId}`&&cart[key][cartLineId]){
     qty=cart[key][cartLineId].qty;
-    // Release reservations for old line
+    // Release old variant's reservations
     const oldVariantId=cartLineId.split('__v')[1];
     const oldVariant=prod.variants.find(v=>v.id===oldVariantId);
-    if(oldVariant&&oldVariant.stockId){
-      const fakeItem={recipe:[],name:prod.name,id:cartLineId};
-      // release stock reservation for old variant
-      if(oldVariant.stockId&&stockReservations[key]){
-        const sid=String(oldVariant.stockId);
-        if(stockReservations[key][sid])stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
-      }
-    }
+    if(oldVariant) reserveVariantRecipe(oldVariant,-1,qty);
     delete cart[key][cartLineId];
   }
 
-  // Add or increment new cart line
+  // Always create a UNIQUE cart key so variants never merge unless same variant
+  const newCartKey=`${prodId}__v${variantId}`;
   const priceAdj=parseFloat(variant.priceAdj)||0;
   const finalPrice=prod.price+priceAdj;
+
   if(!cart[key][newCartKey]){
     cart[key][newCartKey]={
       ...prod,
-      id:newCartKey,      // unique cart key
-      prodId:prodId,      // original product id for stock deduction
+      id:newCartKey,
+      prodId:prodId,
       variantId:variantId,
       variantName:variant.name,
       name:`${prod.name} (${variant.name})`,
@@ -4106,12 +4172,8 @@ function pickVariant(key,prodId,variantId,cartLineId){
   }
   cart[key][newCartKey].qty+=qty;
 
-  // Reserve stock for the variant's linked stock item
-  if(variant.stockId){
-    if(!stockReservations[key])stockReservations[key]={};
-    const sid=String(variant.stockId);
-    stockReservations[key][sid]=(stockReservations[key][sid]||0)+qty;
-  }
+  // Reserve new variant's recipe ingredients
+  reserveVariantRecipe(variant,+1,qty);
 
   closeVariantSheet();
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
