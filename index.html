@@ -1267,9 +1267,9 @@ function editCategory(key,cat){
             <span style="font-size:10px;font-weight:700;color:var(--accent)">Est. cost: ${p(estCost)}</span>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">${ingrList}</div>
-          <button onclick="rmModal();openCustomize('${key}',${pr.id})"
+          <button onclick="rmModal();showCustomizeChoiceExisting('${key}',${pr.id})"
             style="width:100%;padding:5px;font-size:11px;font-weight:600;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:inherit">
-            ⚙️ Edit Ingredients
+            ⚙️ Edit Recipe / Variants
           </button>
         </div>`;
     }
@@ -2081,7 +2081,7 @@ function buildPricing(key){
         ${recipeSummary}
       </div>
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px">
-        ${showCust?`<button class="cust-btn" onclick="openCustomize('${key}',${s.id})">⚙️</button>`:''}
+        ${showCust?`<button class="cust-btn" onclick="showCustomizeChoiceExisting('${key}',${s.id})">⚙️</button>`:''}
         <span style="font-size:10px;color:var(--text-tertiary)">₱</span>
         <input class="price-inp" type="number" value="${s.price}" onchange="updPrice('${key}',${s.id},this.value)">
       </div>
@@ -4521,11 +4521,167 @@ function openAddProduct(key){
     <input class="inp" id="ap-name" placeholder="Name">
     <input class="inp" id="ap-price" type="number" placeholder="Sell price ₱" style="margin-bottom:7px">
     ${thirdField}
-    ${showCust?`<button class="cust-btn" style="width:100%;justify-content:center;margin-bottom:4px" onclick="openCustFromAdd('${key}')">⚙️ Customize Ingredients</button>`:''}
+    ${showCust?`<button class="cust-btn" style="width:100%;justify-content:center;margin-bottom:4px" onclick="showCustomizeChoice('${key}')">⚙️ Customize Ingredients</button>`:''}
     <div class="mbtnrow" style="margin-top:4px">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
       <button class="btn-s" onclick="saveNewProduct('${key}')">Save</button>
     </div>`);
+}
+
+// Choice screen — shown before opening customize
+// Choice screen for existing saved products
+function showCustomizeChoiceExisting(key,prodId){
+  const prod=(BIZ_PRODUCTS[key]||[]).find(x=>x.id===prodId);
+  if(!prod)return;
+  const hasVariants=prod.variants&&prod.variants.filter(v=>v.name).length>0;
+  const hasRecipe=prod.recipe&&prod.recipe.length>0;
+  modal(`<div class="modal-t">⚙️ What do you want to set up?</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5">Choose how <strong>${prod.name}</strong> works at the point of sale.</div>
+
+    <button onclick="rmModal();setTimeout(()=>openVariantsOnly('${key}',${prodId}),80)"
+      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid ${hasVariants?'var(--accent)':'var(--border-primary)'};border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:8px;transition:border-color .15s"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${hasVariants?'var(--accent)':'var(--border-primary)'}'">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary)">⚡ Variants</div>
+        ${hasVariants?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px">${prod.variants.filter(v=>v.name).length} set</span>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;margin-top:4px">Customer picks a type at checkout — e.g. Short / A4 / Long. One sell card, multiple selectable options. Each variant can link to its own stock and have a different price.</div>
+      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: Print, Photocopy, Lamination sizes</div>
+    </button>
+
+    <button onclick="rmModal();setTimeout(()=>openCustomize('${key}',${prodId}),80)"
+      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid ${hasRecipe?'var(--accent)':'var(--border-primary)'};border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:border-color .15s"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${hasRecipe?'var(--accent)':'var(--border-primary)'}'">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;font-weight:700;color:var(--text-primary)">🧩 Ingredients / Stock Link</div>
+        ${hasRecipe?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px">${prod.recipe.length} set</span>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;margin-top:4px">Automatically deducts stock ingredients every time this product is sold. Customer doesn't choose — it just deducts in the background.</div>
+      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: recipes, bundles, or items that consume stock automatically</div>
+    </button>
+
+    <button class="btn-c" style="width:100%" onclick="rmModal()">Cancel</button>`);
+}
+
+function showCustomizeChoice(key){
+  // First save the product draft silently
+  const name=document.getElementById('ap-name')?.value.trim()||'New Product';
+  const price=parseFloat(document.getElementById('ap-price')?.value)||0;
+  const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
+  const category=(document.getElementById('ap-cat')?.value||'').trim();
+  if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
+  let prod=BIZ_PRODUCTS[key].find(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(!prod){
+    prod={id:uid(),name,price,cost:0,unit,category,pinned:false,recipe:[],batchYield:1,variants:[]};
+    BIZ_PRODUCTS[key].push(prod);
+  } else {
+    if(price>0)prod.price=price;
+    if(unit&&unit!=='per item')prod.unit=unit;
+    if(category)prod.category=category;
+  }
+
+  modal(`<div class="modal-t">⚙️ What do you want to set up?</div>
+    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5">Choose how this product works at the point of sale. You can always change this later from the product list.</div>
+
+    <button onclick="rmModal();setTimeout(()=>openVariantsOnly('${key}',${prod.id}),80)"
+      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid var(--border-primary);border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:8px;transition:border-color .15s"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-primary)'">
+      <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px">⚡ Variants</div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">Customer picks a type at checkout — e.g. Short / A4 / Long. One sell card, multiple selectable options. Each variant can link to its own stock and have a different price.</div>
+      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: Print, Photocopy, Lamination sizes</div>
+    </button>
+
+    <button onclick="rmModal();setTimeout(()=>openCustomize('${key}',${prod.id}),80)"
+      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid var(--border-primary);border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:border-color .15s"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-primary)'">
+      <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px">🧩 Ingredients / Stock Link</div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">Automatically deducts stock ingredients every time this product is sold. Customer doesn't choose — it just deducts in the background.</div>
+      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: recipes, bundles, or items that consume stock automatically</div>
+    </button>
+
+    <button class="btn-c" style="width:100%" onclick="rmModal()">Cancel</button>`);
+}
+
+// Variants-only modal — clean, focused UI just for adding variants
+function openVariantsOnly(key,prodId){
+  initBizData(key);
+  const prods=BIZ_PRODUCTS[key]||[];
+  const prod=prods.find(x=>x.id===prodId);
+  if(!prod)return;
+  tempVariants[prodId]=prod.variants?JSON.parse(JSON.stringify(prod.variants)):[];
+  renderVariantsModal(key,prodId);
+}
+
+function renderVariantsModal(key,prodId){
+  const prods=BIZ_PRODUCTS[key]||[];
+  const prod=prods.find(x=>x.id===prodId);
+  if(!prod){rmModal();return;}
+  const stk=BIZ_STOCKS[key]||[];
+  const variants=tempVariants[prodId]||[];
+
+  const rows=variants.length===0
+    ?`<div style="text-align:center;padding:16px 0;font-size:12px;color:var(--text-tertiary)">No variants yet — tap ＋ Add Variant below.</div>`
+    :variants.map((v,i)=>{
+      const seenNames=new Set();const uniqueStk=[];
+      stk.forEach(s=>{const n=s.name.toLowerCase();if(!seenNames.has(n)){seenNames.add(n);uniqueStk.push(s);}});
+      const stockOpts=`<option value="">— No stock link —</option>`+uniqueStk.map(s=>`<option value="${s.id}"${String(v.stockId)===String(s.id)?' selected':''}>${s.name}</option>`).join('');
+      const smry=v.stockId?stk.find(s=>String(s.id)===String(v.stockId)):null;
+      const stockBadge=smry?`<span style="font-size:10px;color:var(--accent);margin-left:6px">${smry.name}</span>`:'';
+      return`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;border:0.5px solid var(--border-primary)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:11px;font-weight:700;color:var(--text-tertiary)">VARIANT ${i+1}</span>
+          <button onclick="removeVariantRow('${key}',${prodId},${i});renderVariantsModal('${key}',${prodId})"
+            style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:13px;padding:0 2px">✕ Remove</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Variant Name <span style="color:var(--danger)">*</span></div>
+            <input class="inp" placeholder="e.g. Short, A4, Long" value="${v.name||''}" style="width:100%"
+              oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Link to Stock Item <span style="font-weight:400">(optional)</span></div>
+            <select style="width:100%;padding:7px 10px;font-size:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-primary);background:var(--bg-primary);color:var(--text-primary);font-family:inherit"
+              onchange="updateVariantField('${key}',${prodId},${i},'stockId',this.value)">
+              ${stockOpts}
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Price Adjustment <span style="font-weight:400">(optional — e.g. +5 or -2)</span></div>
+            <input class="inp" placeholder="0" type="number" value="${v.priceAdj||''}" style="width:100%"
+              oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+  const html=`<div class="modal-t">⚡ Variants — ${prod.name}</div>
+    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Add selectable options for this product. Customer picks one at checkout. Each variant can link to its own stock and adjust the price.</div>
+    <div id="variant-modal-rows" style="max-height:320px;overflow-y:auto">${rows}</div>
+    <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId})"
+      style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1.5px dashed var(--accent);background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;margin-bottom:10px">
+      ＋ Add Variant
+    </button>
+    <div class="mbtnrow">
+      <button class="btn-c" onclick="rmModal()">Cancel</button>
+      <button class="btn-s" onclick="saveVariantsOnly('${key}',${prodId})">✓ Save Variants</button>
+    </div>`;
+
+  const existingModal=document.getElementById('_modal');
+  if(existingModal){existingModal.querySelector('.modal').innerHTML=html;}
+  else{modal(html);}
+}
+
+function saveVariantsOnly(key,prodId){
+  const prods=BIZ_PRODUCTS[key]||[];
+  const prod=prods.find(x=>x.id===prodId);
+  if(!prod)return;
+  const variants=(tempVariants[prodId]||[]).filter(v=>v.name&&v.name.trim());
+  if(!variants.length){toast('Add at least one variant name','err');return;}
+  prod.variants=variants;
+  tempVariants[prodId]=null;
+  saveData();rmModal();render();
+  setTimeout(()=>toast(`Variants saved for "${prod.name}" ✓`),50);
 }
 
 // Open customize from the Add Product modal — no fields required
