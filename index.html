@@ -3337,8 +3337,24 @@ function addToCart(key,id){
   const prods=BIZ_PRODUCTS[key]||[];
   const s=prods.find(x=>x.id===id);
   if(!s)return;
-  // If product has variants, show the bottom sheet instead
+  // If product has variants, check if one was already picked
   if(s.variants&&s.variants.filter(v=>v.name).length>0){
+    // Find existing variant lines for this product
+    const existingLines=Object.keys(cart[key]).filter(k=>k.startsWith(id+'__v'));
+    if(existingLines.length===1){
+      // One variant already in cart — just increment it directly, no sheet
+      const cartKey=existingLines[0];
+      cart[key][cartKey].qty++;
+      const variantId=cartKey.split('__v')[1];
+      const variant=s.variants.find(v=>v.id===variantId);
+      if(variant?.stockId){
+        if(!stockReservations[key])stockReservations[key]={};
+        stockReservations[key][String(variant.stockId)]=(stockReservations[key][String(variant.stockId)]||0)+1;
+      }
+      if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+      return;
+    }
+    // No variant chosen yet, or multiple — show sheet to pick
     showVariantSheet(key,id,null);
     return;
   }
@@ -3354,14 +3370,33 @@ function adjQty(key,id,d){
   if(!cart[key]||!cart[key][id])return;
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
-  const lookupId=isVariant?cart[key][id].prodId:id;
-  const s=prods.find(x=>x.id===lookupId);
   const oldQty=cart[key][id].qty;
   cart[key][id].qty+=d;
   if(cart[key][id].qty<=0){
-    if(s&&!isVariant)reserveIngredients(key,s,-oldQty);
+    if(isVariant){
+      const variantStockId=cart[key][id]?.variantStockId;
+      if(variantStockId&&stockReservations[key]){
+        const sid=String(variantStockId);
+        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-oldQty);
+      }
+    } else {
+      const s=prods.find(x=>String(x.id)===String(id));
+      if(s)reserveIngredients(key,s,-oldQty);
+    }
     delete cart[key][id];
-  }else{if(s&&!isVariant)reserveIngredients(key,s,d);}
+  } else {
+    if(isVariant){
+      const variantStockId=cart[key][id]?.variantStockId;
+      if(variantStockId&&stockReservations[key]){
+        const sid=String(variantStockId);
+        stockReservations[key][sid]=(stockReservations[key][sid]||0)+d;
+        if(stockReservations[key][sid]<0)stockReservations[key][sid]=0;
+      }
+    } else {
+      const s=prods.find(x=>String(x.id)===String(id));
+      if(s)reserveIngredients(key,s,d);
+    }
+  }
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
 }
 function setQtyCart(key,id,v){
@@ -3381,18 +3416,21 @@ function setQtyCart(key,id,v){
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
 }
 function removeFromCart(key,id){
-  if(!cart[key])return;
+  if(!cart[key]||!cart[key][id])return;
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
-  const lookupId=isVariant?cart[key][id]?.prodId:id;
-  const s=prods.find(x=>x.id===lookupId);
   const qty=cart[key][id]?.qty||0;
-  if(qty>0&&s&&!isVariant)reserveIngredients(key,s,-qty);
-  // Release variant stock reservation
-  if(isVariant&&cart[key][id]?.variantStockId){
-    const sid=String(cart[key][id].variantStockId);
-    if(stockReservations[key]&&stockReservations[key][sid])
+  if(isVariant){
+    // Release variant stock reservation
+    const variantStockId=cart[key][id]?.variantStockId;
+    if(variantStockId&&stockReservations[key]){
+      const sid=String(variantStockId);
       stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
+    }
+  } else {
+    // Normal product — release ingredient reservations
+    const s=prods.find(x=>String(x.id)===String(id));
+    if(s&&qty>0)reserveIngredients(key,s,-qty);
   }
   delete cart[key][id];
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
