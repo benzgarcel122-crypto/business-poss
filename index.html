@@ -3036,7 +3036,6 @@ function buildSettingsContent(key){
   const email=currentUser?.email||'—';
   const bizOpen=window._settingsBizOpen&&window._settingsBizOpen[key];
   const manageBizOpen=window._settingsManageBizOpen&&window._settingsManageBizOpen[key];
-  const receiptOpen=window._settingsReceiptOpen&&window._settingsReceiptOpen[key];
   return`
   <div style="padding:4px 0 80px">
 
@@ -3098,18 +3097,6 @@ function buildSettingsContent(key){
       </div>`:''}
     </div>
 
-    <!-- RECEIPT SETTINGS (collapsible) -->
-    <div style="margin-bottom:12px">
-      <div onclick="if(!window._settingsReceiptOpen)window._settingsReceiptOpen={};window._settingsReceiptOpen['${key}']=!window._settingsReceiptOpen['${key}'];render()"
-        style="display:flex;align-items:center;justify-content:space-between;background:var(--bg-secondary);border-radius:${receiptOpen?'var(--radius) var(--radius) 0 0':'var(--radius)'};padding:12px 14px;cursor:pointer;border-bottom:${receiptOpen?'1px solid var(--border-secondary)':'none'}">
-        <span style="font-size:13px;font-weight:700;color:var(--text-primary)">🖨️ Receipt Settings</span>
-        <span style="font-size:16px;color:var(--text-tertiary);display:inline-block;transform:${receiptOpen?'rotate(180deg)':'rotate(0deg)'}"">▾</span>
-      </div>
-      ${receiptOpen?`<div style="background:var(--bg-secondary);border-radius:0 0 var(--radius) var(--radius);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
-        <span style="font-size:13px;color:var(--text-primary)">Show Signature Line</span>
-        <input type="checkbox" id="si-sig-${key}" ${(info.showSig!==false)?'checked':''} onchange="saveBusinessInfo('${key}')" style="width:18px;height:18px;cursor:pointer">
-      </div>`:''}
-    </div>
 
     <!-- DANGER ZONE -->
     <div style="margin-bottom:18px">
@@ -3165,15 +3152,25 @@ async function doChangePassword(){
 
 function confirmClearBiz(key){
   const b=getBizInfo(key);
-  modal(`<div class="modal-t" style="color:var(--danger)">Clear All Data?</div>
-    <div class="modal-sub">This will permanently delete all sales, expenses, stock, and credit data for <strong>${(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].name)||b?.name||key}</strong>.<br><br>⚠️ This cannot be undone.</div>
+  const bizName=(BIZ_CUSTOM_INFO[key]&&BIZ_CUSTOM_INFO[key].name)||b?.name||key;
+  modal(`<div class="modal-t" style="color:var(--danger)">⚠️ Clear All Data?</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5">This will permanently delete <strong>all sales, expenses, stock, and credit data</strong> for <strong>${bizName}</strong>.<br><br>This cannot be undone. Enter your password to confirm.</div>
+    <input class="inp" id="clr-pw" type="password" placeholder="Enter your password to confirm" style="margin-bottom:12px;width:100%">
+    <div id="clr-err" style="color:var(--danger);font-size:12px;margin-bottom:8px;display:none"></div>
     <div class="mbtnrow">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
-      <button class="btn-d" onclick="doClearBiz('${key}')">Yes, Clear Everything</button>
+      <button class="btn-d" onclick="doClearBiz('${key}')">Clear Everything</button>
     </div>`);
+  setTimeout(()=>document.getElementById('clr-pw')?.focus(),100);
 }
 
-function doClearBiz(key){
+async function doClearBiz(key){
+  const pw=document.getElementById('clr-pw')?.value||'';
+  const errEl=document.getElementById('clr-err');
+  if(!pw){if(errEl){errEl.textContent='Please enter your password.';errEl.style.display='block';}return;}
+  const email=currentUser?.email||'';
+  const {error}=await supa.auth.signInWithPassword({email,password:pw});
+  if(error){if(errEl){errEl.textContent='Incorrect password. Try again.';errEl.style.display='block';}return;}
   BIZ_LOGS[key]=[];BIZ_EXPLOGS[key]=[];BIZ_STOCKS[key]=[];
   BIZ_STOCKLOGS[key]=[];BIZ_WASTELOGS[key]=[];BIZ_CREDITS[key]=[];
   BIZ_PRODUCTS[key]=[];todayRev[key]=0;
