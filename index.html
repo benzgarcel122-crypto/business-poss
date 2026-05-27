@@ -294,6 +294,21 @@ select.inp{appearance:auto}
 .sel-save-btn:disabled{opacity:.3;cursor:not-allowed}
 .modal-bg{position:absolute;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:30;border-radius:20px}
 .modal{background:var(--bg-primary);border-radius:14px;padding:16px;width:calc(100% - 48px);max-height:75vh;overflow-y:auto}
+/* Bottom sheet for variant picker */
+.vsheet-bg{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:40;border-radius:20px;display:flex;align-items:flex-end}
+.vsheet{background:var(--bg-primary);border-radius:18px 18px 0 0;width:100%;padding:0 0 12px;max-height:75vh;overflow-y:auto;transform:translateY(100%);animation:slideUp .25s cubic-bezier(.32,1.2,.5,1) forwards}
+@keyframes slideUp{to{transform:translateY(0)}}
+.vsheet-handle{width:36px;height:4px;border-radius:2px;background:var(--border-primary);margin:10px auto 6px}
+.vsheet-title{font-size:14px;font-weight:700;color:var(--text-primary);padding:4px 16px 10px;border-bottom:0.5px solid var(--border-secondary)}
+.vsheet-body{padding:12px 16px}
+.vpill{display:inline-flex;flex-direction:column;align-items:center;padding:10px 14px;border-radius:10px;border:1.5px solid var(--border-primary);background:var(--bg-secondary);cursor:pointer;transition:all .15s;min-width:72px;gap:2px}
+.vpill:active{transform:scale(.96)}
+.vpill.sel{border-color:var(--accent);background:var(--accent-light)}
+.vpill-name{font-size:13px;font-weight:600;color:var(--text-primary)}
+.vpill.sel .vpill-name{color:var(--accent)}
+.vpill-stock{font-size:10px;color:var(--text-tertiary)}
+.vpill.sel .vpill-stock{color:var(--accent)}
+.vpill.out{opacity:.4;pointer-events:none;filter:grayscale(.6)}
 .modal-t{font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:12px}
 .modal-sub{font-size:13px;color:var(--text-secondary);margin-bottom:12px;line-height:1.5}
 .mbtnrow{display:flex;gap:7px;margin-top:8px}
@@ -1064,6 +1079,10 @@ function buildProductGrid(key,filtered){
     const stockSummary=getStockSummary(key,s.name);
     const stockItem=stockSummary||stocks.find(st=>st.name.toLowerCase()===s.name.toLowerCase());
     const inCart=cart[key][s.id];
+    // For variant products, sum qty across all variant cart lines
+    const variantCartQty=s.variants&&s.variants.filter(v=>v.name).length>0
+      ?Object.entries(cart[key]||{}).filter(([k])=>k.startsWith(s.id+'__v')).reduce((sum,[,v])=>sum+v.qty,0)
+      :0;
     const hasStock=!!stockSummary;
     const sellUnit=(s.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
     const stockUnit=(stockSummary?.stockUnit||'').toLowerCase();
@@ -1140,21 +1159,42 @@ function buildProductGrid(key,filtered){
       else if(isLow)stockBadge=`<div style="margin-top:4px;font-size:10px;font-weight:700;color:var(--warning)">Low: ${qty} left</div>`;
       else stockBadge=`<div style="margin-top:4px;font-size:10px;font-weight:600;color:var(--accent)">${qty} in stock</div>`;
     }
-    return`<div class="svc-wrap" style="${finalUnavailable?'pointer-events:none;opacity:0.4;filter:grayscale(0.5)':''}"><div class="sb${inCart?' in-cart':''}${s.pinned?' pinned-svc':''}" onclick="${finalUnavailable?'':` addToCart('${key}',${s.id})`}">
+    return`<div class="svc-wrap" style="${finalUnavailable?'pointer-events:none;opacity:0.4;filter:grayscale(0.5)':''}"><div class="sb${(inCart||variantCartQty>0)?' in-cart':''}${s.pinned?' pinned-svc':''}" onclick="${finalUnavailable?'':` addToCart('${key}',${s.id})`}">
       ${s.pinned?'<span class="pin-badge">📌</span>':''}
       <div class="sn">${s.name}</div>
       <div class="sp">${p(s.price)} ${s.unit}</div>
+      ${s.variants&&s.variants.filter(v=>v.name).length>0?`<div style="margin-top:3px;font-size:9px;font-weight:600;color:var(--accent);background:var(--accent-light);border-radius:4px;padding:1px 5px;display:inline-block">⚡ ${s.variants.filter(v=>v.name).length} variants</div>`:''}
       ${stockBadge}
-      ${inCart?`<div style="margin-top:3px;font-size:10px;font-weight:700;color:var(--accent)">×${inCart.qty} in cart</div>`:''}
+      ${variantCartQty>0?`<div style="margin-top:3px;font-size:10px;font-weight:700;color:var(--accent)">×${variantCartQty} in cart</div>`:inCart?`<div style="margin-top:3px;font-size:10px;font-weight:700;color:var(--accent)">×${inCart.qty} in cart</div>`:''}
     </div><div class="svc-actions"><button class="svc-pin" onclick="event.stopPropagation();togglePin('${key}',${s.id})">${s.pinned?'📌':'📍'}</button><button class="svc-x" onclick="event.stopPropagation();confirmRemoveProduct('${key}',${s.id})">✕</button></div></div>`;
   }).join('');
 }
 
 // Build just the cart rows HTML (reused by patchCart)
 function buildCartRows(key,items){
-  return items.length===0
-    ?`<div class="le" style="padding:8px 0;font-size:11px">Tap a product above to add to cart</div>`
-    :items.map(i=>`<div class="cr"><span class="crn" style="font-size:11px">${i.name}</span><div class="qw"><button class="qb" onclick="adjQty('${key}',${i.id},-1)">−</button><input class="qni" type="number" min="1" value="${i.qty}" onchange="setQtyCart('${key}',${i.id},this.value)" onclick="this.select()"><button class="qb" onclick="adjQty('${key}',${i.id},1)">+</button></div><span class="crp">${p(i.price*i.qty)}</span><button class="cart-x" onclick="removeFromCart('${key}',${i.id})" title="Remove">✕</button></div>`).join('');
+  if(!items.length) return`<div class="le" style="padding:8px 0;font-size:11px">Tap a product above to add to cart</div>`;
+  return items.map(i=>{
+    const isVariant=String(i.id).includes('__v');
+    const cartKey=i.id;
+    // For variant lines, show a "switch" button
+    const switchBtn=isVariant
+      ?`<button onclick="switchVariant('${key}',${i.prodId},'${cartKey}')" title="Switch variant"
+          style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:5px;cursor:pointer;font-size:9px;color:var(--accent);padding:1px 5px;white-space:nowrap;font-family:inherit">⇄ Switch</button>`
+      :'';
+    return`<div class="cr">
+      <div style="flex:1;min-width:0">
+        <span class="crn" style="font-size:11px">${i.name}</span>
+        ${isVariant?`<div style="margin-top:2px">${switchBtn}</div>`:''}
+      </div>
+      <div class="qw">
+        <button class="qb" onclick="adjQty('${key}','${cartKey}',-1)">−</button>
+        <input class="qni" type="number" min="1" value="${i.qty}" onchange="setQtyCart('${key}','${cartKey}',this.value)" onclick="this.select()">
+        <button class="qb" onclick="adjQty('${key}','${cartKey}',1)">+</button>
+      </div>
+      <span class="crp">${p(i.price*i.qty)}</span>
+      <button class="cart-x" onclick="removeFromCart('${key}','${cartKey}')" title="Remove">✕</button>
+    </div>`;
+  }).join('');
 }
 
 // FIX: Search — only re-renders the product grid, never touches the input itself
@@ -3291,10 +3331,72 @@ function reserveIngredients(key,prod,direction){
   });
 }
 
-function addToCart(key,id){initBizData(key);if(!cart[key])cart[key]={};const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;if(!cart[key][id])cart[key][id]={...s,qty:0};cart[key][id].qty++;reserveIngredients(key,s,+1);if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
-function adjQty(key,id,d){if(!cart[key]||!cart[key][id])return;const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);const oldQty=cart[key][id].qty;cart[key][id].qty+=d;if(cart[key][id].qty<=0){reserveIngredients(key,s,-oldQty);delete cart[key][id];}else{reserveIngredients(key,s,d);}if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
-function setQtyCart(key,id,v){const q=parseInt(v)||0;if(!cart[key])cart[key]={};if(q<=0){delete cart[key][id];}else{if(!cart[key][id]){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);cart[key][id]={...s,qty:0};}cart[key][id].qty=q;}if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
-function removeFromCart(key,id){if(!cart[key])return;const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);const qty=cart[key][id]?.qty||0;if(qty>0)reserveIngredients(key,s,-qty);delete cart[key][id];if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}}
+function addToCart(key,id){
+  initBizData(key);
+  if(!cart[key])cart[key]={};
+  const prods=BIZ_PRODUCTS[key]||[];
+  const s=prods.find(x=>x.id===id);
+  if(!s)return;
+  // If product has variants, show the bottom sheet instead
+  if(s.variants&&s.variants.filter(v=>v.name).length>0){
+    showVariantSheet(key,id,null);
+    return;
+  }
+  if(!cart[key][id])cart[key][id]={...s,qty:0};
+  cart[key][id].qty++;
+  reserveIngredients(key,s,+1);
+  if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+}
+function switchVariant(key,prodId,cartLineId){
+  showVariantSheet(key,prodId,cartLineId);
+}
+function adjQty(key,id,d){
+  if(!cart[key]||!cart[key][id])return;
+  const prods=BIZ_PRODUCTS[key]||[];
+  const isVariant=String(id).includes('__v');
+  const lookupId=isVariant?cart[key][id].prodId:id;
+  const s=prods.find(x=>x.id===lookupId);
+  const oldQty=cart[key][id].qty;
+  cart[key][id].qty+=d;
+  if(cart[key][id].qty<=0){
+    if(s&&!isVariant)reserveIngredients(key,s,-oldQty);
+    delete cart[key][id];
+  }else{if(s&&!isVariant)reserveIngredients(key,s,d);}
+  if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+}
+function setQtyCart(key,id,v){
+  const q=parseInt(v)||0;
+  if(!cart[key])cart[key]={};
+  if(q<=0){delete cart[key][id];}
+  else{
+    if(!cart[key][id]){
+      const prods=BIZ_PRODUCTS[key]||[];
+      const isVariant=String(id).includes('__v');
+      const lookupId=isVariant?id.split('__v')[0]:id;
+      const s=prods.find(x=>x.id==lookupId);
+      if(s)cart[key][id]={...s,qty:0};
+    }
+    if(cart[key][id])cart[key][id].qty=q;
+  }
+  if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+}
+function removeFromCart(key,id){
+  if(!cart[key])return;
+  const prods=BIZ_PRODUCTS[key]||[];
+  const isVariant=String(id).includes('__v');
+  const lookupId=isVariant?cart[key][id]?.prodId:id;
+  const s=prods.find(x=>x.id===lookupId);
+  const qty=cart[key][id]?.qty||0;
+  if(qty>0&&s&&!isVariant)reserveIngredients(key,s,-qty);
+  // Release variant stock reservation
+  if(isVariant&&cart[key][id]?.variantStockId){
+    const sid=String(cart[key][id].variantStockId);
+    if(stockReservations[key]&&stockReservations[key][sid])
+      stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
+  }
+  delete cart[key][id];
+  if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+}
 function confirmSale(key){
   if(!cart[key])return;
   const items=Object.values(cart[key]);
@@ -3319,27 +3421,27 @@ function confirmSale(key){
   const prods=BIZ_PRODUCTS[key]||[];
   if(BIZ_STOCKS[key]){
     items.forEach(cartItem=>{
-      const prod=prods.find(x=>x.id===cartItem.id);
+      // Variant line — deduct from variant's linked stock item directly
+      if(cartItem.variantStockId){
+        deductStockFIFO(key,cartItem.variantName?cartItem.name.replace(` (${cartItem.variantName})`,''):cartItem.name,cartItem.qty,cartItem.variantStockId);
+        return;
+      }
+      const prod=prods.find(x=>x.id===cartItem.id||x.id===cartItem.prodId);
       const hasRecipe=prod&&prod.recipe&&prod.recipe.length>0;
       if(hasRecipe){
-        // Recipe deduction — e.g. PRINT uses 1 sheet + 0.08ml ink per print
         const batchYield=prod.batchYield||1;
         const multiplier=cartItem.qty/batchYield;
         deductRecipe(key,prod.recipe,multiplier);
       } else {
-        // Direct name-match deduction FIFO across all batches
         const smry=getStockSummary(key,cartItem.name);
         if(smry){
           const sellUnit=(cartItem.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
           const specBaseUnit=(smry.specBaseUnit||'').toLowerCase();
           const specAmt=smry.specAmt||0;
-          // Always pass deduction in base units (e.g. sheets)
-          // If selling per sheet: pass qty directly as sheets
-          // If selling per ream: convert to sheets first (qty * specAmt)
           const deductInBaseUnits=specAmt>0&&specBaseUnit&&sellUnit===specBaseUnit
-            ?cartItem.qty                        // already in base unit (sheets)
-            :specAmt>0?cartItem.qty*specAmt      // selling reams → convert to sheets
-            :cartItem.qty;                       // no spec, qty is already in stockUnit
+            ?cartItem.qty
+            :specAmt>0?cartItem.qty*specAmt
+            :cartItem.qty;
           deductStockFIFO(key,cartItem.name,deductInBaseUnits);
         }
       }
@@ -3617,8 +3719,10 @@ function getStockSummary(key,name){
 // Deduct qty across batches FIFO (oldest first)
 // deductInBaseUnits = qty to deduct expressed in the base unit (e.g. sheets)
 // Each batch knows its own specAmt — ream batch: 1 ream = specAmt sheets; sheet batch: 1 = 1 sheet
-function deductStockFIFO(key,name,deductInBaseUnits){
-  const batches=(BIZ_STOCKS[key]||[]).filter(s=>s.name.toLowerCase()===name.toLowerCase());
+function deductStockFIFO(key,name,deductInBaseUnits,stockId){
+  const batches=stockId
+    ?(BIZ_STOCKS[key]||[]).filter(s=>String(s.id)===String(stockId))
+    :(BIZ_STOCKS[key]||[]).filter(s=>s.name.toLowerCase()===name.toLowerCase());
   let remainingBase=deductInBaseUnits;
   for(const b of batches){
     if(remainingBase<=0)break;
@@ -3802,6 +3906,172 @@ function deductRecipe(key,recipe,multiplier){
 // keyed by stockId: {stockId, stockName, qty, unit, cost}
 let custCart={};
 
+// ── VARIANTS ─────────────────────────────────────────────────────
+// tempVariants holds unsaved edits while customize modal is open
+let tempVariants={};
+
+function buildVariantRows(key,prodId){
+  const prod=(BIZ_PRODUCTS[key]||[]).find(x=>x.id===prodId);
+  const variants=tempVariants[prodId]||(prod?.variants?JSON.parse(JSON.stringify(prod.variants)):[]);
+  if(!tempVariants[prodId])tempVariants[prodId]=variants;
+  const stk=BIZ_STOCKS[key]||[];
+  if(!variants.length) return`<div style="font-size:11px;color:var(--text-tertiary);padding:4px 2px">No variants — this product adds to cart directly.</div>`;
+  return variants.map((v,i)=>{
+    // Stock picker options
+    const seenNames=new Set();const uniqueStk=[];
+    stk.forEach(s=>{const n=s.name.toLowerCase();if(!seenNames.has(n)){seenNames.add(n);uniqueStk.push(s);}});
+    const stockOpts=`<option value="">— No stock link —</option>`+uniqueStk.map(s=>`<option value="${s.id}"${String(v.stockId)===String(s.id)?' selected':''}>${s.name}</option>`).join('');
+    return`<div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:0.5px solid var(--border-secondary)">
+      <input class="inp" placeholder="Name (e.g. Short)" value="${v.name||''}" style="flex:1;min-width:60px;font-size:12px;padding:5px 7px"
+        oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
+      <select style="flex:1;font-size:11px;padding:4px 5px;border-radius:6px;border:0.5px solid var(--border-primary);background:var(--bg-secondary);color:var(--text-secondary);font-family:inherit"
+        onchange="updateVariantField('${key}',${prodId},${i},'stockId',this.value)">
+        ${stockOpts}
+      </select>
+      <input class="inp" placeholder="±₱" value="${v.priceAdj||''}" style="width:44px;font-size:12px;padding:5px 5px;text-align:center" title="Price adjustment (e.g. +2 or -1)"
+        oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
+      <button onclick="removeVariantRow('${key}',${prodId},${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;padding:2px 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function addVariantRow(key,prodId){
+  if(!tempVariants[prodId])tempVariants[prodId]=[];
+  tempVariants[prodId].push({id:'v'+Date.now(),name:'',stockId:'',priceAdj:''});
+  const el=document.getElementById('variant-rows-'+prodId);
+  if(el)el.innerHTML=buildVariantRows(key,prodId);
+}
+
+function removeVariantRow(key,prodId,idx){
+  if(!tempVariants[prodId])return;
+  tempVariants[prodId].splice(idx,1);
+  const el=document.getElementById('variant-rows-'+prodId);
+  if(el)el.innerHTML=buildVariantRows(key,prodId);
+}
+
+function updateVariantField(key,prodId,idx,field,val){
+  if(!tempVariants[prodId])return;
+  tempVariants[prodId][idx][field]=val;
+}
+
+// ── VARIANT BOTTOM SHEET ─────────────────────────────────────────
+function showVariantSheet(key,prodId,cartLineId){
+  const prod=(BIZ_PRODUCTS[key]||[]).find(x=>x.id===prodId);
+  if(!prod||!prod.variants||!prod.variants.length)return;
+  const stk=BIZ_STOCKS[key]||[];
+  const pa=document.querySelector('.pa');
+  if(!pa)return;
+
+  // Remove any existing sheet
+  const existing=document.getElementById('_vsheet');
+  if(existing)existing.remove();
+
+  const variants=prod.variants.filter(v=>v.name);
+  const currentVariantId=cartLineId?cartLineId.split('__v')[1]:'';
+
+  const pills=variants.map(v=>{
+    const stockItem=v.stockId?stk.find(s=>String(s.id)===String(v.stockId)):null;
+    const smry=stockItem?getStockSummary(key,stockItem.name):null;
+    const specAmt=smry?.specAmt||0;
+    const qty=specAmt>0?Math.round(smry.qty*specAmt*1000)/1000:Math.floor(smry?.qty||0);
+    const isOut=stockItem&&smry&&qty<=0;
+    const priceAdj=parseFloat(v.priceAdj)||0;
+    const adjStr=priceAdj>0?`+₱${priceAdj}`:priceAdj<0?`-₱${Math.abs(priceAdj)}`:'';
+    const stockStr=stockItem?(isOut?'Out of stock':`${qty} left`):'';
+    const isSel=v.id===currentVariantId;
+    return`<div class="vpill${isSel?' sel':''}${isOut?' out':''}"
+      onclick="${isOut?'':` pickVariant('${key}',${prodId},'${v.id}','${cartLineId||''}')`}">
+      <span class="vpill-name">${v.name}${adjStr?` <span style="font-size:10px;font-weight:400">${adjStr}</span>`:''}</span>
+      ${stockStr?`<span class="vpill-stock">${stockStr}</span>`:''}
+    </div>`;
+  }).join('');
+
+  const sheet=document.createElement('div');
+  sheet.id='_vsheet';
+  sheet.className='vsheet-bg';
+  sheet.innerHTML=`<div class="vsheet">
+    <div class="vsheet-handle"></div>
+    <div class="vsheet-title">Select ${prod.variantLabel||'Variant'} — <span style="font-weight:400;color:var(--text-secondary)">${prod.name}</span></div>
+    <div class="vsheet-body">
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">${pills}</div>
+      <button class="btn-c" style="width:100%" onclick="closeVariantSheet()">Cancel</button>
+    </div>
+  </div>`;
+  sheet.addEventListener('click',e=>{if(e.target===sheet)closeVariantSheet();});
+  pa.appendChild(sheet);
+}
+
+function closeVariantSheet(){
+  const el=document.getElementById('_vsheet');
+  if(!el)return;
+  const sheet=el.querySelector('.vsheet');
+  if(sheet){sheet.style.animation='slideDown .2s ease forwards';
+    sheet.style.cssText+=';animation:slideDown .2s ease forwards';
+    const style=document.createElement('style');
+    style.textContent='@keyframes slideDown{to{transform:translateY(100%)}}';
+    document.head.appendChild(style);
+    setTimeout(()=>{el.remove();style.remove();},200);
+  } else {el.remove();}
+}
+
+function pickVariant(key,prodId,variantId,cartLineId){
+  const prod=(BIZ_PRODUCTS[key]||[]).find(x=>x.id===prodId);
+  if(!prod)return;
+  const variant=prod.variants.find(v=>v.id===variantId);
+  if(!variant)return;
+
+  // Cart key = prodId__vVariantId to allow multiple variants of same product
+  const newCartKey=`${prodId}__v${variantId}`;
+  if(!cart[key])cart[key]={};
+
+  // If switching an existing cart line — remove old, keep qty
+  let qty=1;
+  if(cartLineId&&cartLineId!==newCartKey&&cart[key][cartLineId]){
+    qty=cart[key][cartLineId].qty;
+    // Release reservations for old line
+    const oldVariantId=cartLineId.split('__v')[1];
+    const oldVariant=prod.variants.find(v=>v.id===oldVariantId);
+    if(oldVariant&&oldVariant.stockId){
+      const fakeItem={recipe:[],name:prod.name,id:cartLineId};
+      // release stock reservation for old variant
+      if(oldVariant.stockId&&stockReservations[key]){
+        const sid=String(oldVariant.stockId);
+        if(stockReservations[key][sid])stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
+      }
+    }
+    delete cart[key][cartLineId];
+  }
+
+  // Add or increment new cart line
+  const priceAdj=parseFloat(variant.priceAdj)||0;
+  const finalPrice=prod.price+priceAdj;
+  if(!cart[key][newCartKey]){
+    cart[key][newCartKey]={
+      ...prod,
+      id:newCartKey,      // unique cart key
+      prodId:prodId,      // original product id for stock deduction
+      variantId:variantId,
+      variantName:variant.name,
+      name:`${prod.name} (${variant.name})`,
+      price:finalPrice,
+      variantStockId:variant.stockId||null,
+      qty:0
+    };
+  }
+  cart[key][newCartKey].qty+=qty;
+
+  // Reserve stock for the variant's linked stock item
+  if(variant.stockId){
+    if(!stockReservations[key])stockReservations[key]={};
+    const sid=String(variant.stockId);
+    stockReservations[key][sid]=(stockReservations[key][sid]||0)+qty;
+  }
+
+  closeVariantSheet();
+  if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+  setTimeout(()=>toast(`${prod.name} (${variant.name}) added ✓`),50);
+}
+
 function openCustomize(key,prodId){
   initBizData(key);
   const prods=BIZ_PRODUCTS[key]||[];
@@ -3812,6 +4082,9 @@ function openCustomize(key,prodId){
   // Seed custCart from existing recipe
   custCart={};
   (prod.recipe||[]).forEach(r=>{custCart[r.stockId]={...r};});
+
+  // Seed tempVariants from existing variants
+  tempVariants[prodId]=prod.variants?JSON.parse(JSON.stringify(prod.variants)):[];
 
   renderCustomizeModal(key,prodId);
 }
@@ -3947,7 +4220,21 @@ function renderCustomizeModal(key,prodId){
 
   const html=`<div class="modal-t">⚙️ Customize — ${prod.name||'New Product'}</div>
     <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px">Set qty per unit. Unit options come from how you stocked each item. Cost auto-calculates.</div>
-    <div class="cb" id="cust-ing-list" style="padding:4px 12px;max-height:220px;overflow-y:auto">${ingRows}</div>
+
+    <!-- VARIANTS SECTION -->
+    <div style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em">⚡ Variants <span style="font-weight:400;font-size:10px;color:var(--text-tertiary)">(optional — e.g. Short / A4 / Long)</span></span>
+        <button onclick="addVariantRow('${key}',${prodId})" style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:inherit">＋ Add</button>
+      </div>
+      <div id="variant-rows-${prodId}">
+        ${buildVariantRows(key,prodId)}
+      </div>
+    </div>
+
+    <!-- INGREDIENTS SECTION -->
+    <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🧩 Ingredients / Stock Link</div>
+    <div class="cb" id="cust-ing-list" style="padding:4px 12px;max-height:180px;overflow-y:auto">${ingRows}</div>
     ${estLine}${yieldNote}
     <div class="mbtnrow" style="margin-top:8px">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
@@ -4031,6 +4318,11 @@ function saveCustomize(key,prodId){
   const stk=BIZ_STOCKS[key]||[];
   const prod=prods.find(x=>x.id===prodId);
   if(!prod)return;
+
+  // Save variants
+  const variants=(tempVariants[prodId]||[]).filter(v=>v.name.trim());
+  prod.variants=variants;
+  tempVariants[prodId]=null;
   const recipe=Object.values(custCart).filter(r=>r.qty>0);
   const batchYield=parseInt(document.getElementById('batch-yield')?.value)||1;
   // Est cost using knownUnits costPerUnit
