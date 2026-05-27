@@ -3459,9 +3459,17 @@ function confirmSale(key){
   const prods=BIZ_PRODUCTS[key]||[];
   if(BIZ_STOCKS[key]){
     items.forEach(cartItem=>{
-      // Variant line — deduct from variant's linked stock item directly
-      if(cartItem.variantStockId){
-        deductStockFIFO(key,cartItem.variantName?cartItem.name.replace(` (${cartItem.variantName})`,''):cartItem.name,cartItem.qty,cartItem.variantStockId);
+      // Variant line — deduct from variant's recipe
+      if(cartItem.variantId){
+        const prod=prods.find(x=>x.id===cartItem.prodId||String(x.id)===String(cartItem.prodId));
+        const variant=prod?.variants?.find(v=>v.id===cartItem.variantId);
+        if(variant&&variant.recipe&&variant.recipe.length>0){
+          // Use variant recipe — same as ingredient deduction
+          deductRecipe(key,variant.recipe,cartItem.qty);
+        } else if(cartItem.variantStockId){
+          // Fallback: single stock link (old format)
+          deductStockFIFO(key,cartItem.variantName?cartItem.name.replace(` (${cartItem.variantName})`,''):cartItem.name,cartItem.qty,cartItem.variantStockId);
+        }
         return;
       }
       const prod=prods.find(x=>x.id===cartItem.id||x.id===cartItem.prodId);
@@ -4121,9 +4129,6 @@ function openCustomize(key,prodId){
   custCart={};
   (prod.recipe||[]).forEach(r=>{custCart[r.stockId]={...r};});
 
-  // Seed tempVariants from existing variants
-  tempVariants[prodId]=prod.variants?JSON.parse(JSON.stringify(prod.variants)):[];
-
   renderCustomizeModal(key,prodId);
 }
 
@@ -4259,20 +4264,9 @@ function renderCustomizeModal(key,prodId){
   const html=`<div class="modal-t">⚙️ Customize — ${prod.name||'New Product'}</div>
     <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px">Set qty per unit. Unit options come from how you stocked each item. Cost auto-calculates.</div>
 
-    <!-- VARIANTS SECTION -->
-    <div style="margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em">⚡ Variants <span style="font-weight:400;font-size:10px;color:var(--text-tertiary)">(optional — e.g. Short / A4 / Long)</span></span>
-        <button onclick="addVariantRow('${key}',${prodId})" style="font-size:11px;padding:3px 8px;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:inherit">＋ Add</button>
-      </div>
-      <div id="variant-rows-${prodId}">
-        ${buildVariantRows(key,prodId)}
-      </div>
-    </div>
-
     <!-- INGREDIENTS SECTION -->
     <div style="font-size:11px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">🧩 Ingredients / Stock Link</div>
-    <div class="cb" id="cust-ing-list" style="padding:4px 12px;max-height:180px;overflow-y:auto">${ingRows}</div>
+    <div class="cb" id="cust-ing-list" style="padding:4px 12px;max-height:240px;overflow-y:auto">${ingRows}</div>
     ${estLine}${yieldNote}
     <div class="mbtnrow" style="margin-top:8px">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
@@ -4603,62 +4597,211 @@ function showCustomizeChoice(key){
 }
 
 // Variants-only modal — clean, focused UI just for adding variants
+// variantCarts[prodId][variantIdx] = {stockId: {stockId,stockName,qty,useUnit}, ...}
+let variantCarts={};
+
 function openVariantsOnly(key,prodId){
   initBizData(key);
   const prods=BIZ_PRODUCTS[key]||[];
   const prod=prods.find(x=>x.id===prodId);
   if(!prod)return;
+  // Seed tempVariants
   tempVariants[prodId]=prod.variants?JSON.parse(JSON.stringify(prod.variants)):[];
+  // Seed variantCarts from saved variant recipes
+  variantCarts[prodId]={};
+  (tempVariants[prodId]||[]).forEach((v,i)=>{
+    variantCarts[prodId][i]={};
+    (v.recipe||[]).forEach(r=>{variantCarts[prodId][i][r.stockId]={...r};});
+  });
   renderVariantsModal(key,prodId);
 }
 
-function renderVariantsModal(key,prodId){
+function buildVariantIngRows(key,prodId,vi){
+  const stk=BIZ_STOCKS[key]||[];
+  if(!variantCarts[prodId])variantCarts[prodId]={};
+  if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
+  const vc=variantCarts[prodId][vi];
+
+  if(!stk.length) return`<div style="font-size:11px;color:var(--text-tertiary);padding:8px 0;text-align:center">No stock items yet. Add stock first.</div>`;
+
+  // Deduplicate by name
+  const seenNames=new Set();const uniqueStk=[];
+  stk.forEach(s=>{const n=s.name.toLowerCase();if(!seenNames.has(n)){seenNames.add(n);uniqueStk.push(getStockSummary(key,s.name));}});
+
+  // Sort: in-stock first, out last
+  const sorted=[...uniqueStk].sort((a,b)=>{
+    const ord=s=>{const q=s.specAmt>0?Math.round(s.qty*s.specAmt*1000)/1000:Math.floor(s.qty);return q<=0?2:s.low>0&&q<=s.low?1:0;};
+    return ord(a)-ord(b);
+  });
+
+  return sorted.map((s,idx)=>{
+    const ku=getFullUnitsForCustomize(s,key);
+    const inVC=vc[s.id];
+    const useUnit=inVC?.useUnit||(ku[0]?.unit||s.stockUnit||'pc');
+    const useQty=inVC?.qty||0;
+    const kuEntry=ku.find(u=>u.unit===useUnit)||ku[0];
+    const cpuDisplay=p(kuEntry?.costPerUnit||0);
+    const rowCost=useQty>0?useQty*(kuEntry?.costPerUnit||0):0;
+    const unitOpts=ku.map(u=>`<option value="${u.unit}"${u.unit===useUnit?' selected':''}>${u.unit} (${p(u.costPerUnit)}/${u.unit})</option>`).join('');
+
+    // Stock badge
+    const specAmt=s.specAmt||0;
+    const specBaseUnit=(s.specBaseUnit||'').toLowerCase();
+    const useUnitLow=useUnit.toLowerCase();
+    let availQty;
+    if(specAmt>0&&specBaseUnit&&useUnitLow===specBaseUnit){availQty=Math.round(s.qty*specAmt*1000)/1000;}
+    else{availQty=Math.floor(s.qty);}
+    const isOut=availQty<=0;
+    const isLow=!isOut&&s.low>0&&availQty<=s.low;
+    const stockBadge=isOut
+      ?`<span style="font-size:9px;font-weight:700;color:var(--danger);margin-left:4px">Out of stock</span>`
+      :isLow?`<span style="font-size:9px;font-weight:700;color:var(--warning);margin-left:4px">Low: ${availQty}</span>`
+      :`<span style="font-size:9px;color:var(--accent);margin-left:4px">${availQty} ${s.specBaseUnit||s.stockUnit||'unit'}</span>`;
+
+    // Group dividers
+    const ord=x=>{const q=x.specAmt>0?Math.round(x.qty*x.specAmt*1000)/1000:Math.floor(x.qty);return q<=0?2:x.low>0&&q<=x.low?1:0;};
+    const thisG=ord(s);const prevG=idx>0?ord(sorted[idx-1]):thisG;
+    let divider='';
+    if(idx===0&&thisG===0)divider=`<div style="font-size:9px;font-weight:700;color:var(--success);text-transform:uppercase;letter-spacing:.07em;padding:4px 2px 2px">✅ In Stock</div>`;
+    else if(idx===0&&thisG===2)divider=`<div style="font-size:9px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.07em;padding:4px 2px 2px">❌ Out of Stock</div>`;
+    else if(thisG!==prevG){
+      if(thisG===1)divider=`<div style="font-size:9px;font-weight:700;color:var(--warning);text-transform:uppercase;letter-spacing:.07em;padding:8px 2px 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px">⚠️ Low Stock</div>`;
+      if(thisG===2)divider=`<div style="font-size:9px;font-weight:700;color:var(--danger);text-transform:uppercase;letter-spacing:.07em;padding:8px 2px 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px">❌ Out of Stock</div>`;
+    }
+
+    return divider+`<div class="cr" style="${isOut?'opacity:0.4;pointer-events:none;filter:grayscale(0.5)':''}">
+      <div style="flex:1;min-width:0">
+        <div class="crn" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">${s.name}${stockBadge}</div>
+        <div style="font-size:10px;color:var(--text-tertiary)">${cpuDisplay}/${useUnit}${useQty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:''}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+        <div class="qw">
+          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${s.id},-1)">−</button>
+          <input class="qni" type="number" min="0" step="0.001" value="${useQty||''}" placeholder="0"
+            oninput="vSave('${key}',${prodId},${vi},${s.id},this.value)"
+            onblur="vSet('${key}',${prodId},${vi},${s.id},this.value)" style="width:44px">
+          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${s.id},1)">+</button>
+        </div>
+        ${ku.length>1
+          ?`<select style="font-size:10px;padding:2px 4px;border-radius:5px;border:0.5px solid var(--border-primary);background:var(--bg-secondary);color:var(--text-secondary);font-family:inherit;cursor:pointer"
+              onchange="vUnitChange('${key}',${prodId},${vi},${s.id},this.value)">${unitOpts}</select>`
+          :`<span style="font-size:10px;color:var(--text-tertiary)">${useUnit}</span>`
+        }
+      </div>
+      <span class="crp" style="min-width:44px;align-self:center">${useQty>0?p(rowCost):''}</span>
+    </div>`;
+  }).join('');
+}
+
+function vAdj(key,prodId,vi,stockId,d){
+  const stk=BIZ_STOCKS[key]||[];
+  const item=stk.find(s=>s.id===stockId);
+  if(!item)return;
+  if(!variantCarts[prodId])variantCarts[prodId]={};
+  if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
+  const vc=variantCarts[prodId][vi];
+  const ku=getItemUnits(item);
+  const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
+  const cur=vc[stockId]?.qty||0;
+  const next=Math.max(0,Math.round((cur+d)*1000)/1000);
+  if(next===0){delete vc[stockId];}
+  else{vc[stockId]={stockId,stockName:item.name,qty:next,useUnit};}
+  renderVariantsModal(key,prodId,vi);
+}
+
+function vSave(key,prodId,vi,stockId,val){
+  const stk=BIZ_STOCKS[key]||[];
+  const item=stk.find(s=>s.id===stockId);
+  if(!item)return;
+  if(!variantCarts[prodId])variantCarts[prodId]={};
+  if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
+  const vc=variantCarts[prodId][vi];
+  const qty=parseFloat(val)||0;
+  const ku=getItemUnits(item);
+  const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
+  if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
+}
+
+function vSet(key,prodId,vi,stockId,val){
+  const stk=BIZ_STOCKS[key]||[];
+  const item=stk.find(s=>s.id===stockId);
+  if(!item)return;
+  if(!variantCarts[prodId])variantCarts[prodId]={};
+  if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
+  const vc=variantCarts[prodId][vi];
+  const qty=parseFloat(val)||0;
+  const ku=getItemUnits(item);
+  const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
+  if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
+  renderVariantsModal(key,prodId,vi);
+}
+
+function vUnitChange(key,prodId,vi,stockId,newUnit){
+  const stk=BIZ_STOCKS[key]||[];
+  const item=stk.find(s=>s.id===stockId);
+  if(!item)return;
+  if(!variantCarts[prodId])variantCarts[prodId]={};
+  if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
+  const vc=variantCarts[prodId][vi];
+  if(vc[stockId]){vc[stockId].useUnit=newUnit;}
+  else{vc[stockId]={stockId,stockName:item.name,qty:0,useUnit:newUnit};}
+  renderVariantsModal(key,prodId,vi);
+}
+
+function renderVariantsModal(key,prodId,activeVi){
   const prods=BIZ_PRODUCTS[key]||[];
   const prod=prods.find(x=>x.id===prodId);
   if(!prod){rmModal();return;}
-  const stk=BIZ_STOCKS[key]||[];
   const variants=tempVariants[prodId]||[];
 
   const rows=variants.length===0
-    ?`<div style="text-align:center;padding:16px 0;font-size:12px;color:var(--text-tertiary)">No variants yet — tap ＋ Add Variant below.</div>`
+    ?`<div style="text-align:center;padding:20px 0;font-size:12px;color:var(--text-tertiary)">No variants yet — tap ＋ Add Variant below.</div>`
     :variants.map((v,i)=>{
-      const seenNames=new Set();const uniqueStk=[];
-      stk.forEach(s=>{const n=s.name.toLowerCase();if(!seenNames.has(n)){seenNames.add(n);uniqueStk.push(s);}});
-      const stockOpts=`<option value="">— No stock link —</option>`+uniqueStk.map(s=>`<option value="${s.id}"${String(v.stockId)===String(s.id)?' selected':''}>${s.name}</option>`).join('');
-      const smry=v.stockId?stk.find(s=>String(s.id)===String(v.stockId)):null;
-      const stockBadge=smry?`<span style="font-size:10px;color:var(--accent);margin-left:6px">${smry.name}</span>`:'';
-      return`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:6px;border:0.5px solid var(--border-primary)">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-size:11px;font-weight:700;color:var(--text-tertiary)">VARIANT ${i+1}</span>
-          <button onclick="removeVariantRow('${key}',${prodId},${i});renderVariantsModal('${key}',${prodId})"
-            style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:13px;padding:0 2px">✕ Remove</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <div>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Variant Name <span style="color:var(--danger)">*</span></div>
-            <input class="inp" placeholder="e.g. Short, A4, Long" value="${v.name||''}" style="width:100%"
+      const isOpen=(activeVi===i)||(activeVi===undefined&&variants.length===1);
+      const ingRows=buildVariantIngRows(key,prodId,i);
+      const vc=variantCarts[prodId]?.[i]||{};
+      const usedCount=Object.values(vc).filter(r=>r.qty>0).length;
+      const stk=BIZ_STOCKS[key]||[];
+      let totalCost=0;
+      Object.values(vc).forEach(r=>{
+        const item=stk.find(s=>s.id===r.stockId);if(!item)return;
+        const ku=getItemUnits(item);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
+        totalCost+=r.qty*(ke?.costPerUnit||0);
+      });
+      return`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);margin-bottom:8px;border:1.5px solid ${isOpen?'var(--accent)':'var(--border-primary)'}">
+        <!-- Variant header — tap to expand/collapse -->
+        <div onclick="renderVariantsModal('${key}',${prodId},${isOpen?'undefined':i})"
+          style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+            <span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px;flex-shrink:0">VAR ${i+1}</span>
+            <input class="inp" placeholder="Variant name (e.g. Short, A4, Long)" value="${v.name||''}"
+              style="flex:1;font-size:12px;font-weight:600;padding:4px 8px;border:none;background:transparent;color:var(--text-primary)"
+              onclick="event.stopPropagation()"
               oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
           </div>
-          <div>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Link to Stock Item <span style="font-weight:400">(optional)</span></div>
-            <select style="width:100%;padding:7px 10px;font-size:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-primary);background:var(--bg-primary);color:var(--text-primary);font-family:inherit"
-              onchange="updateVariantField('${key}',${prodId},${i},'stockId',this.value)">
-              ${stockOpts}
-            </select>
-          </div>
-          <div>
-            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">Price Adjustment <span style="font-weight:400">(optional — e.g. +5 or -2)</span></div>
-            <input class="inp" placeholder="0" type="number" value="${v.priceAdj||''}" style="width:100%"
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            ${usedCount>0?`<span style="font-size:10px;color:var(--accent)">${usedCount} item${usedCount!==1?'s':''} · ${p(totalCost)}</span>`:''}
+            <input class="inp" placeholder="±₱" type="number" value="${v.priceAdj||''}"
+              style="width:48px;font-size:11px;padding:3px 5px;text-align:center" title="Price adjustment"
+              onclick="event.stopPropagation()"
               oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
+            <button onclick="event.stopPropagation();removeVariantRow('${key}',${prodId},${i});renderVariantsModal('${key}',${prodId})"
+              style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;padding:0 2px;white-space:nowrap">✕</button>
           </div>
         </div>
+        <!-- Expanded ingredient rows -->
+        ${isOpen?`<div style="border-top:0.5px solid var(--border-secondary);padding:4px 10px 8px">
+          <div style="font-size:9px;color:var(--text-tertiary);padding:6px 2px 2px;text-transform:uppercase;letter-spacing:.06em">Stock to deduct per sale</div>
+          ${ingRows}
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px;font-style:italic">🖨️ Stock deducts <strong>per unit sold</strong> at checkout.</div>
+        </div>`:''}
       </div>`;
     }).join('');
 
   const html=`<div class="modal-t">⚡ Variants — ${prod.name}</div>
-    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Add selectable options for this product. Customer picks one at checkout. Each variant can link to its own stock and adjust the price.</div>
-    <div id="variant-modal-rows" style="max-height:320px;overflow-y:auto">${rows}</div>
-    <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId})"
+    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Each variant = one selectable option at checkout. Set the stock it deducts per sale. Tap a variant to expand.</div>
+    <div id="variant-modal-rows" style="max-height:400px;overflow-y:auto;padding-right:2px">${rows}</div>
+    <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId},${variants.length})"
       style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1.5px dashed var(--accent);background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;margin-bottom:10px">
       ＋ Add Variant
     </button>
@@ -4678,8 +4821,14 @@ function saveVariantsOnly(key,prodId){
   if(!prod)return;
   const variants=(tempVariants[prodId]||[]).filter(v=>v.name&&v.name.trim());
   if(!variants.length){toast('Add at least one variant name','err');return;}
+  // Attach each variant's recipe from variantCarts
+  variants.forEach((v,i)=>{
+    const vc=variantCarts[prodId]?.[i]||{};
+    v.recipe=Object.values(vc).filter(r=>r.qty>0);
+  });
   prod.variants=variants;
   tempVariants[prodId]=null;
+  variantCarts[prodId]=null;
   saveData();rmModal();render();
   setTimeout(()=>toast(`Variants saved for "${prod.name}" ✓`),50);
 }
