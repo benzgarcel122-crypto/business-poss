@@ -1146,9 +1146,31 @@ function buildProductGrid(key,filtered){
         }
       }
     }
+    // ── Variant availability check ───────────────────────────────
+    // Only block if ALL variants are out of stock
+    let variantBlocked=false;
+    const variants=s.variants||[];
+    const activeVariants=variants.filter(v=>v.name);
+    if(activeVariants.length>0){
+      const allVariantsOut=activeVariants.every(v=>{
+        const recipe=v.recipe||[];
+        if(recipe.length===0)return false; // no recipe = always available
+        return recipe.some(r=>{
+          if(!r.stockId)return false;
+          const stockItem=stocks.find(st=>String(st.id)===String(r.stockId));
+          if(!stockItem)return true; // stock item missing = treat as out
+          const smry=getStockSummary(key,stockItem.name);
+          const availBase=smry?.totalBase||0;
+          return availBase<(r.qty||1);
+        });
+      });
+      variantBlocked=allVariantsOut;
+      // If product has variants, skip the normal recipeBlocked check
+      recipeBlocked=false;
+    }
     // ────────────────────────────────────────────────────────────
 
-    const finalUnavailable=isUnavailable||recipeBlocked;
+    const finalUnavailable=(isUnavailable&&!activeVariants.length)||variantBlocked||recipeBlocked;
 
     let stockBadge='';
     if(recipeBlocked&&!(hasStock&&(isOut||isUnavailable))){
