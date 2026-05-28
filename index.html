@@ -3341,37 +3341,23 @@ function reserveIngredients(key,prod,direction){
   if(!stockReservations[key])stockReservations[key]={};
   const stk=BIZ_STOCKS[key]||[];
   const recipe=prod.recipe||[];
-  if(recipe.length>0){
-    const batchYield=prod.batchYield||1;
-    recipe.forEach(ing=>{
-      const allBatches=stk.filter(s=>s.id===ing.stockId||s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
-      if(!allBatches.length)return;
-      const refBatch=allBatches.find(b=>b.specAmt>0&&b.specBaseUnit)||allBatches[0];
-      const useUnit=(ing.useUnit||'').toLowerCase();
-      const specBaseUnit=(refBatch.specBaseUnit||'').toLowerCase();
-      const specAmt=refBatch.specAmt||0;
-      const perUnit=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit
-        ?(ing.qty/batchYield)
-        :specAmt>0?(ing.qty/batchYield)*specAmt
-        :(ing.qty/batchYield);
-      const name=allBatches[0].name;
-      stockReservations[key][name]=(stockReservations[key][name]||0)+direction*perUnit;
-      if(stockReservations[key][name]<0)stockReservations[key][name]=0;
-    });
-  } else {
-    // No recipe — direct stock product: reserve by name match
-    const name=(prod.name||'').toLowerCase();
-    const matched=stk.find(s=>s.name.toLowerCase()===name);
-    if(matched){
-      const specAmt=matched.specAmt||0;
-      const sellUnit=(prod.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
-      const specBaseUnit=(matched.specBaseUnit||'').toLowerCase();
-      // How many base units does 1 sale consume?
-      const perUnit=specAmt>0&&specBaseUnit&&sellUnit===specBaseUnit?1:specAmt>0?specAmt:1;
-      stockReservations[key][matched.name]=(stockReservations[key][matched.name]||0)+direction*perUnit;
-      if(stockReservations[key][matched.name]<0)stockReservations[key][matched.name]=0;
-    }
-  }
+  if(recipe.length===0)return; // direct stock products use inCartQty for display — no reservation needed
+  const batchYield=prod.batchYield||1;
+  recipe.forEach(ing=>{
+    const allBatches=stk.filter(s=>s.id===ing.stockId||s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+    if(!allBatches.length)return;
+    const refBatch=allBatches.find(b=>b.specAmt>0&&b.specBaseUnit)||allBatches[0];
+    const useUnit=(ing.useUnit||'').toLowerCase();
+    const specBaseUnit=(refBatch.specBaseUnit||'').toLowerCase();
+    const specAmt=refBatch.specAmt||0;
+    const perUnit=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit
+      ?(ing.qty/batchYield)
+      :specAmt>0?(ing.qty/batchYield)*specAmt
+      :(ing.qty/batchYield);
+    const name=allBatches[0].name;
+    stockReservations[key][name]=(stockReservations[key][name]||0)+direction*perUnit;
+    if(stockReservations[key][name]<0)stockReservations[key][name]=0;
+  });
 }
 
 // Tracks the last variant picked per product per biz — so tapping card increments it directly
@@ -3528,7 +3514,7 @@ function adjQty(key,id,d){
         } else {
           // Direct stock product — check by name
           const smry=getStockSummary(key,s.name);
-          if(smry&&(smry.totalBase||0)<1){
+          if(smry&&Math.floor(smry._totalBase||smry.totalBase||0)<=oldQty){
             toast(`${s.name} is out of stock`,'err');
             return;
           }
@@ -3597,10 +3583,12 @@ function setQtyCart(key,id,v){
       if(s){
         const smry=getStockSummary(key,s.name);
         if(smry){
-          const totalAvail=(smry.totalBase||0)+(oldQty); // add back current reservation
-          if(q>totalAvail){
-            toast(`Only ${Math.floor(totalAvail)} in stock`,'err');
-            q=Math.floor(totalAvail);
+          // Direct stock: totalBase has NO reservations — subtract inCartQty manually
+          const totalAvail=(smry._totalBase||smry.totalBase||0);
+          const maxAllowed=Math.floor(totalAvail); // user can have at most all available stock
+          if(q>maxAllowed){
+            toast(`Only ${maxAllowed} in stock`,'err');
+            q=maxAllowed;
           }
         }
       }
