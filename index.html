@@ -1188,7 +1188,10 @@ function buildCartRows(key,items){
       </div>
       <div class="qw">
         <button class="qb" onclick="adjQty('${key}','${cartKey}',-1)">−</button>
-        <input class="qni" type="number" min="1" value="${i.qty}" onchange="setQtyCart('${key}','${cartKey}',this.value)" onclick="this.select()">
+        <input class="qni" type="number" min="1" value="${i.qty}"
+          onclick="this.select()"
+          onblur="setQtyCart('${key}','${cartKey}',this.value)"
+          onkeydown="if(event.key==='Enter'){this.blur();}">
         <button class="qb" onclick="adjQty('${key}','${cartKey}',1)">+</button>
       </div>
       <span class="crp">${p(i.price*i.qty)}</span>
@@ -3452,16 +3455,45 @@ function adjQty(key,id,d){
 function setQtyCart(key,id,v){
   const q=parseInt(v)||0;
   if(!cart[key])cart[key]={};
-  if(q<=0){delete cart[key][id];}
-  else{
+  const prods=BIZ_PRODUCTS[key]||[];
+  const isVariant=String(id).includes('__v');
+  const oldQty=cart[key][id]?.qty||0;
+  const diff=q-oldQty;
+  if(q<=0){
+    // Remove and release reservations
+    if(isVariant){
+      const variantId=cart[key][id]?.variantId;
+      const prodId=cart[key][id]?.prodId;
+      const prod=prods.find(x=>String(x.id)===String(prodId));
+      const variant=prod?.variants?.find(vt=>vt.id===variantId);
+      reserveVariantByRecipe(key,variant,-1,oldQty);
+    } else {
+      const s=prods.find(x=>String(x.id)===String(id));
+      if(s&&oldQty>0)reserveIngredients(key,s,-oldQty);
+    }
+    delete cart[key][id];
+  } else {
     if(!cart[key][id]){
-      const prods=BIZ_PRODUCTS[key]||[];
-      const isVariant=String(id).includes('__v');
       const lookupId=isVariant?id.split('__v')[0]:id;
       const s=prods.find(x=>x.id==lookupId);
       if(s)cart[key][id]={...s,qty:0};
     }
-    if(cart[key][id])cart[key][id].qty=q;
+    if(cart[key][id]){
+      cart[key][id].qty=q;
+      // Update reservations for the difference
+      if(diff!==0){
+        if(isVariant){
+          const variantId=cart[key][id]?.variantId;
+          const prodId=cart[key][id]?.prodId;
+          const prod=prods.find(x=>String(x.id)===String(prodId));
+          const variant=prod?.variants?.find(vt=>vt.id===variantId);
+          reserveVariantByRecipe(key,variant,diff>0?1:-1,Math.abs(diff));
+        } else {
+          const s=prods.find(x=>String(x.id)===String(id));
+          if(s)reserveIngredients(key,s,diff);
+        }
+      }
+    }
   }
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
 }
