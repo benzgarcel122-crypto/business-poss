@@ -1440,13 +1440,15 @@ function patchCart(key){
     if(dr)dr.remove();
   }
   // Also patch product grid to update "in cart" badges
-  const prods=BIZ_PRODUCTS[key]||[];
-  const sorted=[...prods].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
-  const activeCat=sellCatFilter[key]||'All';
-  const catFiltered=activeCat==='All'?sorted:sorted.filter(s=>s.category===activeCat);
-  const filtered=catFiltered.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
-  const grid=document.getElementById('sell-grid-'+key);
-  if(grid)grid.innerHTML=buildProductGrid(key,filtered);
+  try{
+    const prods=BIZ_PRODUCTS[key]||[];
+    const sorted=[...prods].sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0));
+    const activeCat=sellCatFilter[key]||'All';
+    const catFiltered=activeCat==='All'?sorted:sorted.filter(s=>s.category===activeCat);
+    const filtered=catFiltered.filter(s=>s.name.toLowerCase().includes((svcQ||'').toLowerCase()));
+    const grid=document.getElementById('sell-grid-'+key);
+    if(grid)grid.innerHTML=buildProductGrid(key,filtered);
+  }catch(e){console.error('patchCart grid error:',e);}
 }
 
 function buildStock(key){
@@ -3310,25 +3312,41 @@ function creditNameAC(key,val){
 
 // Reserve (direction=+1) or release (direction=-1) ingredient stock for one unit of a recipe product
 function reserveIngredients(key,prod,direction){
-  if(!prod||!prod.recipe||!prod.recipe.length)return;
-  const stk=BIZ_STOCKS[key]||[];
+  if(!prod)return;
   if(!stockReservations[key])stockReservations[key]={};
-  const batchYield=prod.batchYield||1;
-  prod.recipe.forEach(ing=>{
-    const allBatches=stk.filter(s=>s.id===ing.stockId||s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
-    if(!allBatches.length)return;
-    const refBatch=allBatches.find(b=>b.specAmt>0&&b.specBaseUnit)||allBatches[0];
-    const useUnit=(ing.useUnit||'').toLowerCase();
-    const specBaseUnit=(refBatch.specBaseUnit||'').toLowerCase();
-    const specAmt=refBatch.specAmt||0;
-    const perUnit=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit
-      ?(ing.qty/batchYield)
-      :specAmt>0?(ing.qty/batchYield)*specAmt
-      :(ing.qty/batchYield);
-    const name=allBatches[0].name;
-    stockReservations[key][name]=(stockReservations[key][name]||0)+direction*perUnit;
-    if(stockReservations[key][name]<0)stockReservations[key][name]=0;
-  });
+  const stk=BIZ_STOCKS[key]||[];
+  const recipe=prod.recipe||[];
+  if(recipe.length>0){
+    const batchYield=prod.batchYield||1;
+    recipe.forEach(ing=>{
+      const allBatches=stk.filter(s=>s.id===ing.stockId||s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+      if(!allBatches.length)return;
+      const refBatch=allBatches.find(b=>b.specAmt>0&&b.specBaseUnit)||allBatches[0];
+      const useUnit=(ing.useUnit||'').toLowerCase();
+      const specBaseUnit=(refBatch.specBaseUnit||'').toLowerCase();
+      const specAmt=refBatch.specAmt||0;
+      const perUnit=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit
+        ?(ing.qty/batchYield)
+        :specAmt>0?(ing.qty/batchYield)*specAmt
+        :(ing.qty/batchYield);
+      const name=allBatches[0].name;
+      stockReservations[key][name]=(stockReservations[key][name]||0)+direction*perUnit;
+      if(stockReservations[key][name]<0)stockReservations[key][name]=0;
+    });
+  } else {
+    // No recipe — direct stock product: reserve by name match
+    const name=(prod.name||'').toLowerCase();
+    const matched=stk.find(s=>s.name.toLowerCase()===name);
+    if(matched){
+      const specAmt=matched.specAmt||0;
+      const sellUnit=(prod.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
+      const specBaseUnit=(matched.specBaseUnit||'').toLowerCase();
+      // How many base units does 1 sale consume?
+      const perUnit=specAmt>0&&specBaseUnit&&sellUnit===specBaseUnit?1:specAmt>0?specAmt:1;
+      stockReservations[key][matched.name]=(stockReservations[key][matched.name]||0)+direction*perUnit;
+      if(stockReservations[key][matched.name]<0)stockReservations[key][matched.name]=0;
+    }
+  }
 }
 
 function addToCart(key,id){
@@ -3342,24 +3360,11 @@ function addToCart(key,id){
     // Find existing variant lines for this product
     const existingLines=Object.keys(cart[key]).filter(k=>k.startsWith(id+'__v'));
     if(existingLines.length===1){
-      // One variant already in cart — just increment it directly, no sheet
       const cartKey=existingLines[0];
       cart[key][cartKey].qty++;
       const variantId=cartKey.split('__v')[1];
       const variant=s.variants.find(v=>v.id===variantId);
-      if(variant){
-        if(!stockReservations[key])stockReservations[key]={};
-        const recipe=variant.recipe||[];
-        if(recipe.length>0){
-          recipe.forEach(r=>{
-            if(!r.stockId)return;
-            const sid=String(r.stockId);
-            stockReservations[key][sid]=(stockReservations[key][sid]||0)+(r.qty||1);
-          });
-        } else if(variant.stockId){
-          stockReservations[key][String(variant.stockId)]=(stockReservations[key][String(variant.stockId)]||0)+1;
-        }
-      }
+      reserveVariantByRecipe(key,variant,+1,1);
       if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
       return;
     }
@@ -3375,37 +3380,47 @@ function addToCart(key,id){
 function switchVariant(key,prodId,cartLineId){
   showVariantSheet(key,prodId,cartLineId);
 }
+// NAME-based reservation helper — matches getStockSummary which reads by name
+function reserveVariantByRecipe(key,variant,direction,amount){
+  if(!variant)return;
+  if(!stockReservations[key])stockReservations[key]={};
+  const stk=BIZ_STOCKS[key]||[];
+  const recipe=variant.recipe||[];
+  if(recipe.length>0){
+    recipe.forEach(r=>{
+      const item=stk.find(s=>String(s.id)===String(r.stockId));
+      if(!item)return;
+      const specAmt=item.specAmt||0;
+      const useUnit=(r.useUnit||'').toLowerCase();
+      const specBaseUnit=(item.specBaseUnit||'').toLowerCase();
+      const perUnit=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit?(r.qty||1):specAmt>0?(r.qty||1)*specAmt:(r.qty||1);
+      stockReservations[key][item.name]=(stockReservations[key][item.name]||0)+direction*perUnit*amount;
+      if(stockReservations[key][item.name]<0)stockReservations[key][item.name]=0;
+    });
+  } else if(variant.stockId){
+    const item=stk.find(s=>String(s.id)===String(variant.stockId));
+    if(item){
+      stockReservations[key][item.name]=Math.max(0,(stockReservations[key][item.name]||0)+direction*amount);
+    }
+  }
+}
+
 function adjQty(key,id,d){
   if(!cart[key]||!cart[key][id])return;
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
   const oldQty=cart[key][id].qty;
   cart[key][id].qty+=d;
-
   if(isVariant){
     const variantId=cart[key][id]?.variantId;
     const prodId=cart[key][id]?.prodId;
     const prod=prods.find(x=>String(x.id)===String(prodId));
     const variant=prod?.variants?.find(v=>v.id===variantId);
-    if(!stockReservations[key])stockReservations[key]={};
-    const releaseVariant=(v,amount)=>{
-      const recipe=v?.recipe||[];
-      if(recipe.length>0){
-        recipe.forEach(r=>{
-          if(!r.stockId)return;
-          const sid=String(r.stockId);
-          stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+(r.qty||1)*amount);
-        });
-      } else if(v?.stockId){
-        const sid=String(v.stockId);
-        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+amount);
-      }
-    };
     if(cart[key][id].qty<=0){
-      if(variant)releaseVariant(variant,-oldQty);
+      reserveVariantByRecipe(key,variant,-1,oldQty);
       delete cart[key][id];
     } else {
-      if(variant)releaseVariant(variant,d);
+      reserveVariantByRecipe(key,variant,d>0?1:-1,1);
     }
   } else {
     const s=prods.find(x=>String(x.id)===String(id));
@@ -3439,24 +3454,12 @@ function removeFromCart(key,id){
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
   const qty=cart[key][id]?.qty||0;
-  if(!stockReservations[key])stockReservations[key]={};
-
   if(isVariant){
     const variantId=cart[key][id]?.variantId;
     const prodId=cart[key][id]?.prodId;
     const prod=prods.find(x=>String(x.id)===String(prodId));
     const variant=prod?.variants?.find(v=>v.id===variantId);
-    const recipe=variant?.recipe||[];
-    if(recipe.length>0){
-      recipe.forEach(r=>{
-        if(!r.stockId)return;
-        const sid=String(r.stockId);
-        stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-(r.qty||1)*qty);
-      });
-    } else if(variant?.stockId){
-      const sid=String(variant.stockId);
-      stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)-qty);
-    }
+    reserveVariantByRecipe(key,variant,-1,qty);
   } else {
     const s=prods.find(x=>String(x.id)===String(id));
     if(s&&qty>0)reserveIngredients(key,s,-qty);
@@ -4057,11 +4060,10 @@ function showVariantSheet(key,prodId,cartLineId){
         const stockItem=stk.find(s=>String(s.id)===String(r.stockId));
         if(!stockItem)return;
         const smry=getStockSummary(key,stockItem.name);
-        const specAmt=smry?.specAmt||0;
-        const rawQty=specAmt>0?Math.round(smry.qty*specAmt*1000)/1000:Math.floor(smry?.qty||0);
-        const reserved=(stockReservations[key]?.[String(r.stockId)]||0);
-        const avail=Math.max(0,rawQty-reserved);
-        const canMake=r.qty>0?Math.floor(avail/r.qty):avail;
+        if(!smry)return;
+        // totalBase already has reservations subtracted
+        const availBase=smry.totalBase||0;
+        const canMake=r.qty>0?Math.floor(availBase/r.qty):availBase;
         if(canMake<minAvail)minAvail=canMake;
       });
       if(minAvail===Infinity)minAvail=0;
@@ -4123,32 +4125,13 @@ function pickVariant(key,prodId,variantId,cartLineId){
   if(!cart[key])cart[key]={};
   if(!stockReservations[key])stockReservations[key]={};
 
-  // Helper: reserve or release a variant's recipe ingredients
-  function reserveVariantRecipe(v,direction,amount){
-    const recipe=v.recipe||[];
-    if(recipe.length>0){
-      recipe.forEach(r=>{
-        if(!r.stockId)return;
-        const sid=String(r.stockId);
-        const deductAmt=(r.qty||1)*amount*direction;
-        stockReservations[key][sid]=(stockReservations[key][sid]||0)+deductAmt;
-        if(stockReservations[key][sid]<0)stockReservations[key][sid]=0;
-      });
-    } else if(v.stockId){
-      // Fallback: single stock link
-      const sid=String(v.stockId);
-      stockReservations[key][sid]=Math.max(0,(stockReservations[key][sid]||0)+(direction*amount));
-    }
-  }
-
   // SWITCH mode — remove old cart line, transfer its qty
   let qty=1;
   if(cartLineId&&cartLineId!==`${prodId}__v${variantId}`&&cart[key][cartLineId]){
     qty=cart[key][cartLineId].qty;
-    // Release old variant's reservations
     const oldVariantId=cartLineId.split('__v')[1];
     const oldVariant=prod.variants.find(v=>v.id===oldVariantId);
-    if(oldVariant) reserveVariantRecipe(oldVariant,-1,qty);
+    if(oldVariant)reserveVariantByRecipe(key,oldVariant,-1,qty);
     delete cart[key][cartLineId];
   }
 
@@ -4173,7 +4156,7 @@ function pickVariant(key,prodId,variantId,cartLineId){
   cart[key][newCartKey].qty+=qty;
 
   // Reserve new variant's recipe ingredients
-  reserveVariantRecipe(variant,+1,qty);
+  reserveVariantByRecipe(key,variant,+1,qty);
 
   closeVariantSheet();
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
@@ -4697,9 +4680,11 @@ function buildVariantIngRows(key,prodId,vi){
   });
 
   return sorted.map((s,idx)=>{
-    const ku=getFullUnitsForCustomize(s,key);
-    const inVC=vc[s.id];
-    const useUnit=inVC?.useUnit||(ku[0]?.unit||s.stockUnit||'pc');
+    // getFullUnitsForCustomize needs a raw stock batch, not a summary
+    const rawBatch=stk.find(b=>b.name.toLowerCase()===s.name.toLowerCase())||s;
+    const ku=getFullUnitsForCustomize(rawBatch,key);
+    const inVC=vc[s.id]||vc[rawBatch.id];
+    const useUnit=inVC?.useUnit||(ku[0]?.unit||rawBatch.stockUnit||'pc');
     const useQty=inVC?.qty||0;
     const kuEntry=ku.find(u=>u.unit===useUnit)||ku[0];
     const cpuDisplay=p(kuEntry?.costPerUnit||0);
@@ -4738,15 +4723,15 @@ function buildVariantIngRows(key,prodId,vi){
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
         <div class="qw">
-          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${s.id},-1)">−</button>
+          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${rawBatch.id},-1)">−</button>
           <input class="qni" type="number" min="0" step="0.001" value="${useQty||''}" placeholder="0"
-            oninput="vSave('${key}',${prodId},${vi},${s.id},this.value)"
-            onblur="vSet('${key}',${prodId},${vi},${s.id},this.value)" style="width:44px">
-          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${s.id},1)">+</button>
+            oninput="vSave('${key}',${prodId},${vi},${rawBatch.id},this.value)"
+            onblur="vSet('${key}',${prodId},${vi},${rawBatch.id},this.value)" style="width:44px">
+          <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${rawBatch.id},1)">+</button>
         </div>
         ${ku.length>1
           ?`<select style="font-size:10px;padding:2px 4px;border-radius:5px;border:0.5px solid var(--border-primary);background:var(--bg-secondary);color:var(--text-secondary);font-family:inherit;cursor:pointer"
-              onchange="vUnitChange('${key}',${prodId},${vi},${s.id},this.value)">${unitOpts}</select>`
+              onchange="vUnitChange('${key}',${prodId},${vi},${rawBatch.id},this.value)">${unitOpts}</select>`
           :`<span style="font-size:10px;color:var(--text-tertiary)">${useUnit}</span>`
         }
       </div>
