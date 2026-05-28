@@ -3389,20 +3389,56 @@ function addToCart(key,id){
     const lastKey=lastPickedVariant[key+'_'+id];
     const lastInCart=lastKey&&cart[key][lastKey];
     if(lastInCart){
-      // Increment the last picked variant directly — no sheet
-      cart[key][lastKey].qty++;
       const variantId=lastKey.split('__v')[1];
       const variant=s.variants.find(v=>v.id===variantId);
+      // Check if this variant still has stock before incrementing
+      const recipe=variant?.recipe||[];
+      let variantOut=false;
+      if(recipe.length>0){
+        const stk=BIZ_STOCKS[key]||[];
+        variantOut=recipe.some(r=>{
+          if(!r.stockId)return false;
+          const stockItem=stk.find(st=>String(st.id)===String(r.stockId));
+          if(!stockItem)return true;
+          const smry=getStockSummary(key,stockItem.name);
+          return (smry?.totalBase||0)<(r.qty||1);
+        });
+      }
+      if(variantOut){
+        // Variant is out — notify and open sheet to pick another
+        toast(`${variant?.name||'This variant'} is out of stock — pick another`,'err');
+        showVariantSheet(key,id,null);
+        return;
+      }
+      // Stock available — increment directly
+      cart[key][lastKey].qty++;
       reserveVariantByRecipe(key,variant,+1,1);
       if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
       return;
     }
     if(existingLines.length===1){
-      // Only one variant in cart and no last pick tracked — increment it
+      // Only one variant in cart and no last pick tracked — check stock then increment
       const cartKey=existingLines[0];
-      cart[key][cartKey].qty++;
       const variantId=cartKey.split('__v')[1];
       const variant=s.variants.find(v=>v.id===variantId);
+      const recipe=variant?.recipe||[];
+      let variantOut=false;
+      if(recipe.length>0){
+        const stk=BIZ_STOCKS[key]||[];
+        variantOut=recipe.some(r=>{
+          if(!r.stockId)return false;
+          const stockItem=stk.find(st=>String(st.id)===String(r.stockId));
+          if(!stockItem)return true;
+          const smry=getStockSummary(key,stockItem.name);
+          return (smry?.totalBase||0)<(r.qty||1);
+        });
+      }
+      if(variantOut){
+        toast(`${variant?.name||'This variant'} is out of stock — pick another`,'err');
+        showVariantSheet(key,id,null);
+        return;
+      }
+      cart[key][cartKey].qty++;
       reserveVariantByRecipe(key,variant,+1,1);
       lastPickedVariant[key+'_'+id]=cartKey;
       if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
