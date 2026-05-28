@@ -1178,8 +1178,8 @@ function buildCartRows(key,items){
     const cartKey=i.id;
     // For variant lines, show a "switch" button
     const switchBtn=isVariant
-      ?`<button onclick="switchVariant('${key}',${i.prodId},'${cartKey}')" title="Switch variant"
-          style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:5px;cursor:pointer;font-size:9px;color:var(--accent);padding:1px 5px;white-space:nowrap;font-family:inherit">⇄ Switch</button>`
+      ?`<button onclick="switchVariant('${key}',${i.prodId},'${cartKey}')" title="Add another variant"
+          style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:5px;cursor:pointer;font-size:9px;color:var(--accent);padding:1px 5px;white-space:nowrap;font-family:inherit">＋ Variant</button>`
       :'';
     return`<div class="cr">
       <div style="flex:1;min-width:0">
@@ -3378,7 +3378,8 @@ function addToCart(key,id){
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
 }
 function switchVariant(key,prodId,cartLineId){
-  showVariantSheet(key,prodId,cartLineId);
+  // Opens sheet to add a new variant line — does not replace existing
+  showVariantSheet(key,prodId,null);
 }
 // NAME-based reservation helper — matches getStockSummary which reads by name
 function reserveVariantByRecipe(key,variant,direction,amount){
@@ -4125,17 +4126,8 @@ function pickVariant(key,prodId,variantId,cartLineId){
   if(!cart[key])cart[key]={};
   if(!stockReservations[key])stockReservations[key]={};
 
-  // SWITCH mode — remove old cart line, transfer its qty
-  let qty=1;
-  if(cartLineId&&cartLineId!==`${prodId}__v${variantId}`&&cart[key][cartLineId]){
-    qty=cart[key][cartLineId].qty;
-    const oldVariantId=cartLineId.split('__v')[1];
-    const oldVariant=prod.variants.find(v=>v.id===oldVariantId);
-    if(oldVariant)reserveVariantByRecipe(key,oldVariant,-1,qty);
-    delete cart[key][cartLineId];
-  }
-
-  // Always create a UNIQUE cart key so variants never merge unless same variant
+  // Always add as new line — never replace existing lines
+  // Cart key = prodId__vVariantId — same variant taps just increment
   const newCartKey=`${prodId}__v${variantId}`;
   const priceAdj=parseFloat(variant.priceAdj)||0;
   const finalPrice=prod.price+priceAdj;
@@ -4153,10 +4145,11 @@ function pickVariant(key,prodId,variantId,cartLineId){
       qty:0
     };
   }
-  cart[key][newCartKey].qty+=qty;
+  // Always start at +1 — never carry over qty from another line
+  cart[key][newCartKey].qty+=1;
 
-  // Reserve new variant's recipe ingredients
-  reserveVariantByRecipe(key,variant,+1,qty);
+  // Reserve 1 unit of this variant's recipe
+  reserveVariantByRecipe(key,variant,+1,1);
 
   closeVariantSheet();
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
