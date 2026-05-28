@@ -3487,6 +3487,57 @@ function adjQty(key,id,d){
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
   const oldQty=cart[key][id].qty;
+  const stk=BIZ_STOCKS[key]||[];
+
+  // ── Stock cap when pressing + ────────────────────────────────
+  if(d>0){
+    if(isVariant){
+      const variantId=cart[key][id]?.variantId;
+      const prodId=cart[key][id]?.prodId;
+      const prod=prods.find(x=>String(x.id)===String(prodId));
+      const variant=prod?.variants?.find(v=>v.id===variantId);
+      const recipe=variant?.recipe||[];
+      if(recipe.length>0){
+        const isOut=recipe.some(r=>{
+          const item=stk.find(s=>String(s.id)===String(r.stockId));
+          if(!item)return true;
+          const smry=getStockSummary(key,item.name);
+          return (smry?.totalBase||0)<(r.qty||1);
+        });
+        if(isOut){
+          toast(`${variant?.name||'Variant'} is out of stock`,'err');
+          return;
+        }
+      }
+    } else {
+      const s=prods.find(x=>String(x.id)===String(id));
+      if(s){
+        const recipe=s.recipe||[];
+        if(recipe.length>0){
+          // Recipe product — check if any ingredient is depleted
+          const isBlocked=recipe.some(r=>{
+            const item=stk.find(st=>String(st.id)===String(r.stockId)||st.name.toLowerCase()===(r.stockName||'').toLowerCase());
+            if(!item)return true;
+            const smry=getStockSummary(key,item.name);
+            return (smry?.totalBase||0)<(r.qty||1);
+          });
+          if(isBlocked){
+            toast('Not enough ingredients in stock','err');
+            return;
+          }
+        } else {
+          // Direct stock product — check by name
+          const smry=getStockSummary(key,s.name);
+          if(smry&&(smry.totalBase||0)<1){
+            toast(`${s.name} is out of stock`,'err');
+            return;
+          }
+        }
+      }
+    }
+  }
+  // ────────────────────────────────────────────────────────────
+
   cart[key][id].qty+=d;
   if(isVariant){
     const variantId=cart[key][id]?.variantId;
@@ -3511,14 +3562,54 @@ function adjQty(key,id,d){
   if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
 }
 function setQtyCart(key,id,v){
-  const q=parseInt(v)||0;
+  let q=parseInt(v)||0;
   if(!cart[key])cart[key]={};
   const prods=BIZ_PRODUCTS[key]||[];
   const isVariant=String(id).includes('__v');
   const oldQty=cart[key][id]?.qty||0;
+
+  // ── Max stock cap ────────────────────────────────────────────
+  if(q>0){
+    const stk=BIZ_STOCKS[key]||[];
+    if(isVariant){
+      const variantId=cart[key][id]?.variantId;
+      const prodId=cart[key][id]?.prodId;
+      const prod=prods.find(x=>String(x.id)===String(prodId));
+      const variant=prod?.variants?.find(vt=>vt.id===variantId);
+      const recipe=variant?.recipe||[];
+      if(recipe.length>0){
+        let maxCanAdd=Infinity;
+        recipe.forEach(r=>{
+          const item=stk.find(s=>String(s.id)===String(r.stockId));
+          if(!item)return;
+          const smry=getStockSummary(key,item.name);
+          const totalAvail=(smry?.totalBase||0)+(oldQty*(r.qty||1)); // add back current reservation
+          const canMake=r.qty>0?Math.floor(totalAvail/(r.qty||1)):totalAvail;
+          if(canMake<maxCanAdd)maxCanAdd=canMake;
+        });
+        if(maxCanAdd!==Infinity&&q>maxCanAdd){
+          toast(`Only ${maxCanAdd} available for this variant`,'err');
+          q=maxCanAdd;
+        }
+      }
+    } else {
+      const s=prods.find(x=>String(x.id)===String(id));
+      if(s){
+        const smry=getStockSummary(key,s.name);
+        if(smry){
+          const totalAvail=(smry.totalBase||0)+(oldQty); // add back current reservation
+          if(q>totalAvail){
+            toast(`Only ${Math.floor(totalAvail)} in stock`,'err');
+            q=Math.floor(totalAvail);
+          }
+        }
+      }
+    }
+  }
+  // ────────────────────────────────────────────────────────────
+
   const diff=q-oldQty;
   if(q<=0){
-    // Remove and release reservations
     if(isVariant){
       const variantId=cart[key][id]?.variantId;
       const prodId=cart[key][id]?.prodId;
@@ -3538,7 +3629,6 @@ function setQtyCart(key,id,v){
     }
     if(cart[key][id]){
       cart[key][id].qty=q;
-      // Update reservations for the difference
       if(diff!==0){
         if(isVariant){
           const variantId=cart[key][id]?.variantId;
