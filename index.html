@@ -3349,26 +3349,41 @@ function reserveIngredients(key,prod,direction){
   }
 }
 
+// Tracks the last variant picked per product per biz — so tapping card increments it directly
+const lastPickedVariant={};
+
 function addToCart(key,id){
   initBizData(key);
   if(!cart[key])cart[key]={};
   const prods=BIZ_PRODUCTS[key]||[];
   const s=prods.find(x=>x.id===id);
   if(!s)return;
-  // If product has variants, check if one was already picked
   if(s.variants&&s.variants.filter(v=>v.name).length>0){
-    // Find existing variant lines for this product
     const existingLines=Object.keys(cart[key]).filter(k=>k.startsWith(id+'__v'));
-    if(existingLines.length===1){
-      const cartKey=existingLines[0];
-      cart[key][cartKey].qty++;
-      const variantId=cartKey.split('__v')[1];
+    // Check if last picked variant is still in cart
+    const lastKey=lastPickedVariant[key+'_'+id];
+    const lastInCart=lastKey&&cart[key][lastKey];
+    if(lastInCart){
+      // Increment the last picked variant directly — no sheet
+      cart[key][lastKey].qty++;
+      const variantId=lastKey.split('__v')[1];
       const variant=s.variants.find(v=>v.id===variantId);
       reserveVariantByRecipe(key,variant,+1,1);
       if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
       return;
     }
-    // No variant chosen yet, or multiple — show sheet to pick
+    if(existingLines.length===1){
+      // Only one variant in cart and no last pick tracked — increment it
+      const cartKey=existingLines[0];
+      cart[key][cartKey].qty++;
+      const variantId=cartKey.split('__v')[1];
+      const variant=s.variants.find(v=>v.id===variantId);
+      reserveVariantByRecipe(key,variant,+1,1);
+      lastPickedVariant[key+'_'+id]=cartKey;
+      if(screen===key&&(bizSubTab[key]||'sell')==='sell'){patchCart(key);}else{render();}
+      return;
+    }
+    // No variant in cart yet — show sheet
     showVariantSheet(key,id,null);
     return;
   }
@@ -3527,8 +3542,9 @@ function confirmSale(key){
     });
   }
   cart[key]={};
-  // Clear reservations for this business — permanent deduction already handled above
+  // Clear reservations and last picked variants for this business
   stockReservations[key]={};
+  Object.keys(lastPickedVariant).forEach(k=>{if(k.startsWith(key+'_'))delete lastPickedVariant[k];});
   discount[key]={type:'fixed',val:'',open:false};
   saveData();
   render();
@@ -3599,6 +3615,7 @@ function confirmCreditSale(key){
   // Clear cart and reservations
   cart[key]={};
   stockReservations[key]={};
+  Object.keys(lastPickedVariant).forEach(k=>{if(k.startsWith(key+'_'))delete lastPickedVariant[k];});
   discount[key]={type:'fixed',val:'',open:false};
   saleMode[key]='sale';
   saveData();
@@ -4147,6 +4164,9 @@ function pickVariant(key,prodId,variantId,cartLineId){
   }
   // Always start at +1 — never carry over qty from another line
   cart[key][newCartKey].qty+=1;
+
+  // Track as last picked so subsequent card taps increment this directly
+  lastPickedVariant[key+'_'+prodId]=newCartKey;
 
   // Reserve 1 unit of this variant's recipe
   reserveVariantByRecipe(key,variant,+1,1);
