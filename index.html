@@ -2760,7 +2760,9 @@ function doPrintAll(key){
     </div>`;
   }
 
-  const boxesHtml=logs.map(l=>buildReceiptBox(l)).join('');
+  const printableLogs=logs.filter(l=>!(l.method==='Credit/Utang'&&(l.total||0)===0));
+  if(printableLogs.length===0){toast('No paid transactions to print','err');return;}
+  const boxesHtml=printableLogs.map(l=>buildReceiptBox(l)).join('');
   const d=new Date();
   const dateStr=`${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
 
