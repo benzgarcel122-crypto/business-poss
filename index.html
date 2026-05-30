@@ -733,6 +733,12 @@ async function loadFromSupabase(){
     (credits.data||[]).forEach(r=>{BIZ_CREDITS[r.biz_key]=r.data;});
     (stocklogs.data||[]).forEach(r=>{BIZ_STOCKLOGS[r.biz_key]=r.data;});
     (wastelogs.data||[]).forEach(r=>{BIZ_WASTELOGS[r.biz_key]=r.data;});
+    // Rebuild todayRev from BIZ_LOGS — always accurate regardless of session/refresh
+    todayRev={};
+    Object.entries(BIZ_LOGS).forEach(([k,logArr])=>{
+      const dayTotal=(logArr||[]).filter(l=>l.dateKey===today&&l.method!=='Credit/Utang').reduce((s,l)=>s+(l.total||0),0);
+      if(dayTotal>0)todayRev[k]=dayTotal;
+    });
     return true;
   }catch(e){
     console.warn('Supabase load failed:',e);
