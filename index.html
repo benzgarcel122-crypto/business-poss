@@ -3054,6 +3054,28 @@ function doRemoveCredit(key,id){
   if(c.items&&c.items.length&&BIZ_STOCKS[key]){
     const prods=BIZ_PRODUCTS[key]||[];
     c.items.forEach(cartItem=>{
+      const isVariantLine=String(cartItem.id).includes('__v');
+      if(isVariantLine){
+        // Return variant recipe stock
+        const prod=prods.find(x=>String(x.id)===String(cartItem.prodId));
+        const variant=prod?.variants?.find(v=>v.id===cartItem.variantId);
+        if(variant&&variant.recipe&&variant.recipe.length>0){
+          variant.recipe.forEach(ing=>{
+            const allBatches=(BIZ_STOCKS[key]||[]).filter(s=>s.id===ing.stockId||s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+            if(!allBatches.length)return;
+            const refBatch=allBatches.find(b=>b.specAmt>0&&b.specBaseUnit)||allBatches[0];
+            const useUnit=(ing.useUnit||'').toLowerCase();
+            const specBaseUnit=(refBatch.specBaseUnit||'').toLowerCase();
+            const specAmt=refBatch.specAmt||0;
+            const returnBase=specAmt>0&&specBaseUnit&&useUnit===specBaseUnit
+              ?(ing.qty*cartItem.qty)
+              :specAmt>0?(ing.qty*cartItem.qty)*specAmt
+              :(ing.qty*cartItem.qty);
+            returnStockFIFO(key,allBatches[0].name,returnBase);
+          });
+        }
+        return;
+      }
       const prod=prods.find(x=>x.id===cartItem.id);
       const hasRecipe=prod&&prod.recipe&&prod.recipe.length>0;
       if(hasRecipe){
@@ -3733,6 +3755,15 @@ function confirmCreditSale(key){
   const prods=BIZ_PRODUCTS[key]||[];
   if(BIZ_STOCKS[key]){
     items.forEach(cartItem=>{
+      const isVariantLine=String(cartItem.id).includes('__v');
+      if(isVariantLine){
+        const prod=prods.find(x=>String(x.id)===String(cartItem.prodId));
+        const variant=prod?.variants?.find(v=>v.id===cartItem.variantId);
+        if(variant&&variant.recipe&&variant.recipe.length>0){
+          deductRecipe(key,variant.recipe,cartItem.qty);
+        }
+        return;
+      }
       const prod=prods.find(x=>x.id===cartItem.id);
       const hasRecipe=prod&&prod.recipe&&prod.recipe.length>0;
       if(hasRecipe){
