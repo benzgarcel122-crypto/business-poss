@@ -2377,7 +2377,7 @@ function buildReportsContent(key){
     :filteredLogs.reduce((s,l)=>s+(l.total||0),0);
   const exp=filteredExp.reduce((s,e)=>s+e.amount,0);
   const net=rev-exp;
-  const txnCount=filteredLogs.length;
+  const txnCount=filteredLogs.filter(l=>!(l.method==='Credit/Utang'&&(l.total||0)===0)).length;
   const avgSale=txnCount>0?rev/txnCount:0;
 
   // Top products
@@ -2443,7 +2443,7 @@ function buildReportsContent(key){
     ${topProds.length>0?`<div class="sl">🏆 Top Products</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildTopProdsChart(topProds)}</div>`:''}
     <div class="sl">📋 Transactions (${txnCount})</div>
     <div class="cb" style="max-height:220px;overflow-y:auto">
-      ${txnCount===0?`<div class="le">No transactions for this period</div>`:filteredLogs.slice().reverse().map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}
+      ${txnCount===0?`<div class="le">No transactions for this period</div>`:filteredLogs.filter(l=>!(l.method==='Credit/Utang'&&(l.total||0)===0)).slice().reverse().map(l=>`<div class="li"><div class="lt"><span class="ln">${l.id}</span><span class="la">${p(l.total)}</span></div><div class="lm">${(l.items||[]).map(i=>i.name+'×'+i.qty).join(', ')} · ${l.method} · ${l.time}</div></div>`).join('')}
     </div>`;
 }
 
