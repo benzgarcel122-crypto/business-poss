@@ -659,6 +659,7 @@ async function saveToSupabase(){
       biz_exp_cats:BIZ_EXP_CATS||{},
       clients:CLIENTS||[],
       biz_custom_info:BIZ_CUSTOM_INFO||{},
+      rev_per:revPer||"Today",
       updated_at:now
     },{onConflict:'user_id'});
     // per-biz tables
@@ -709,6 +710,7 @@ async function loadFromSupabase(){
       if(ud.biz_exp_cats)BIZ_EXP_CATS=ud.biz_exp_cats;
       if(ud.clients)CLIENTS=ud.clients;
       if(ud.biz_custom_info)BIZ_CUSTOM_INFO=ud.biz_custom_info;
+      if(ud.rev_per)revPer=ud.rev_per;
       if(ud.today_rev){
         const tr=ud.today_rev;
         const savedDate=tr._savedDate||null;
@@ -913,8 +915,8 @@ function buildHome(){
     :selectedBiz.map(k=>{const b=getBizInfo(k);const rev=getRevPer(k,revPer);const exp=getExpPer(k,revPer);const net=rev-exp;return`<div class="brow" onclick="expandBiz=expandBiz==='${k}'?null:'${k}';render()"><div class="brow-inner"><span class="brow-name"><span style="font-size:10px">${expandBiz===k?'▾':'▸'}</span>${b?.name||k}</span><span class="brow-amt${net===0?' zero':''}" style="${net<0?'color:var(--danger)':''}">${p(net)}</span></div></div><div class="biz-exp${expandBiz===k?' open':''}"><div class="bei"><div class="bei-stats"><div class="er"><span class="er-l">Revenue</span><span class="er-g">${p(rev)}</span></div><div class="er"><span class="er-l">Expenses</span><span class="er-r">${p(exp)}</span></div><div class="er"><span class="er-l">Net Profit</span><span class="${net>=0?'er-g':'er-r'}">${p(net)}</span></div></div>${buildTrendline(k,revPer,rev)}</div></div>`;}).join('');
   const revenueSection=`<div class="rev-scroll">${revenueRows}</div><div style="display:flex;justify-content:space-between;padding:8px 0 2px;border-top:0.5px solid var(--border-secondary);margin-top:4px"><span style="font-size:12px;font-weight:700;color:var(--text-primary)">Net Profit</span><span style="font-size:15px;font-weight:700;color:${tot>=0?'var(--success)':'var(--danger)'}">${p(tot)}</span></div>`;
   const bizCards=selectedBiz.map(k=>{const b=getBizInfo(k);if(!b)return'';return`<div class="bc-wrap"><div class="bc" onclick="goScreen('${k}')"><div class="bi">${b.icon}</div><div class="bn">${b.name}</div><div class="bb">${getBadge(k)}</div></div><button class="bc-remove" onclick="event.stopPropagation();confirmRemoveBiz('${k}')" title="Remove from hub">✕</button></div>`;}).join('');
-  if(selectedBiz.length===0){return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div><div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">No businesses yet</div></div><div class="empty-state"><div class="empty-icon">🏪</div><div class="empty-title">Set up your businesses</div><div class="empty-sub">Choose which business types you operate — each one comes with its own POS, inventory, and expense tracking built-in.</div><button class="setup-btn" onclick="openBizSelector()">＋ Select Your Businesses</button></div></div>`;}
-  return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div>${revenueSection}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="sl" style="margin:0">My Businesses</div><button class="add-svc-btn" onclick="openBizSelector()">＋ Add Business</button></div><div class="biz-grid-wrap"><div class="hg">${bizCards}</div></div></div>`;
+  if(selectedBiz.length===0){return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;saveData();render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div><div style="font-size:12px;color:var(--text-tertiary);text-align:center;padding:10px 0">No businesses yet</div></div><div class="empty-state"><div class="empty-icon">🏪</div><div class="empty-title">Set up your businesses</div><div class="empty-sub">Choose which business types you operate — each one comes with its own POS, inventory, and expense tracking built-in.</div><button class="setup-btn" onclick="openBizSelector()">＋ Select Your Businesses</button></div></div>`;}
+  return`<div class="tab-scroll"><div id="t-el" class="tm ok"></div><div class="hsum"><div class="hsh"><div class="hrev">NET P&L</div><select class="hsd" onchange="revPer=this.value;expandBiz=null;saveData();render()">${['Today','Monthly','Yearly'].map(x=>`<option${revPer===x?' selected':''}>${x}</option>`).join('')}</select></div>${revenueSection}</div><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div class="sl" style="margin:0">My Businesses</div><button class="add-svc-btn" onclick="openBizSelector()">＋ Add Business</button></div><div class="biz-grid-wrap"><div class="hg">${bizCards}</div></div></div>`;
 }
 
 function buildBizScreen(key){
@@ -972,7 +974,7 @@ function buildSell(key){
     </div>
     <div class="sell-stats">
       <div class="sc"><div class="slb">Today's Sales</div><div class="sv g">${p(todayRev[key]||0)}</div></div>
-      <div class="sc"><div class="slb">Transactions</div><div class="sv b">${logs.length}</div></div>
+      <div class="sc"><div class="slb">Transactions</div><div class="sv b">${(logs.filter(l=>l.dateKey===new Date().toDateString()&&l.method!=='Credit/Utang')).length}</div></div>
     </div>
     <div style="position:relative;margin-bottom:8px">
       <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-tertiary);font-size:14px;pointer-events:none">⌕</span>
