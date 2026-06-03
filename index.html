@@ -3544,11 +3544,20 @@ function adjQty(key,id,d){
             return;
           }
         } else {
-          // Direct stock product — check by name
+          // Direct stock product — check by name, convert to sell units
           const smry=getStockSummary(key,s.name);
-          if(smry&&Math.floor(smry._totalBase||smry.totalBase||0)<=oldQty){
-            toast(`${s.name} is out of stock`,'err');
-            return;
+          if(smry){
+            const totalBase=(smry._totalBase||smry.totalBase||0);
+            const sellUnit=(s.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
+            const specBaseUnit=(smry.specBaseUnit||'').toLowerCase();
+            const specAmt=smry.specAmt||0;
+            const maxInSellUnits=(specAmt>0&&specBaseUnit&&sellUnit!==specBaseUnit)
+              ?Math.floor(totalBase/specAmt)
+              :Math.floor(totalBase);
+            if(maxInSellUnits<=oldQty){
+              toast(`${s.name} is out of stock`,'err');
+              return;
+            }
           }
         }
       }
@@ -3615,9 +3624,17 @@ function setQtyCart(key,id,v){
       if(s){
         const smry=getStockSummary(key,s.name);
         if(smry){
-          // Direct stock: subtract what is already in cart (other lines) to get true remaining
+          // Convert totalBase back to sell units for accurate cap
           const totalBase=(smry._totalBase||smry.totalBase||0);
-          const maxAllowed=Math.max(0,Math.floor(totalBase)-oldQty);
+          const sellUnit=(s.unit||'').replace(/^per\s+/i,'').trim().toLowerCase();
+          const specBaseUnit=(smry.specBaseUnit||'').toLowerCase();
+          const specAmt=smry.specAmt||0;
+          // If selling in base unit (e.g. sheet), cap = totalBase - oldQty
+          // If selling in spec unit (e.g. bottle, ream), cap = floor(totalBase/specAmt) - oldQty
+          const maxInSellUnits=(specAmt>0&&specBaseUnit&&sellUnit!==specBaseUnit)
+            ?Math.floor(totalBase/specAmt)
+            :Math.floor(totalBase);
+          const maxAllowed=Math.max(0,maxInSellUnits-oldQty);
           if(q>maxAllowed){
             toast(`Only ${maxAllowed} in stock`,'err');
             q=maxAllowed;
