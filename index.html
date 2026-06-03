@@ -3615,9 +3615,9 @@ function setQtyCart(key,id,v){
       if(s){
         const smry=getStockSummary(key,s.name);
         if(smry){
-          // Direct stock: totalBase has NO reservations — subtract inCartQty manually
-          const totalAvail=(smry._totalBase||smry.totalBase||0);
-          const maxAllowed=Math.floor(totalAvail); // user can have at most all available stock
+          // Direct stock: subtract what is already in cart (other lines) to get true remaining
+          const totalBase=(smry._totalBase||smry.totalBase||0);
+          const maxAllowed=Math.max(0,Math.floor(totalBase)-oldQty);
           if(q>maxAllowed){
             toast(`Only ${maxAllowed} in stock`,'err');
             q=maxAllowed;
