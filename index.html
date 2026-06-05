@@ -544,6 +544,7 @@ const SUPA_URL='https://xaednpvxyufztgibyhnd.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhZWRucHZ4eXVmenRnaWJ5aG5kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NzQ1NTMsImV4cCI6MjA5NTM1MDU1M30.DUuX88YG2Za8kwWvmYjzYGH-jt2YPscZGXl_N_R6_Dk';
 const supa=supabase.createClient(SUPA_URL,SUPA_KEY);
 let currentUser=null;
+let realtimeChannel=null;
 
 // ── Auth UI ───────────────────────────────────────────────────
 function showAuthScreen(msg=''){
@@ -4964,6 +4965,7 @@ function buildVariantIngRows(key,prodId,vi){
         <div class="qw">
           <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${rawBatch.id},-1)">−</button>
           <input class="qni" type="number" min="0" step="0.001" value="${useQty||''}" placeholder="0"
+            id="vi-${prodId}-${vi}-${rawBatch.id}"
             oninput="vSave('${key}',${prodId},${vi},${rawBatch.id},this.value)"
             onblur="vSet('${key}',${prodId},${vi},${rawBatch.id},this.value)" style="width:44px">
           <button class="qb" onclick="vAdj('${key}',${prodId},${vi},${rawBatch.id},1)">+</button>
@@ -4979,6 +4981,23 @@ function buildVariantIngRows(key,prodId,vi){
   }).join('');
 }
 
+function patchVariantCostSummary(prodId,vi,key){
+  // Update only the cost summary span — no full re-render, scroll preserved
+  const el=document.getElementById('vc-summary-'+prodId+'-'+vi);
+  if(!el)return;
+  const stk=BIZ_STOCKS[key]||[];
+  const vc=variantCarts[prodId]?.[vi]||{};
+  const usedCount=Object.values(vc).filter(r=>r.qty>0).length;
+  let totalCost=0;
+  Object.values(vc).forEach(r=>{
+    const item=stk.find(s=>s.id===r.stockId);if(!item)return;
+    const ku=getItemUnits(item);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
+    totalCost+=r.qty*(ke?.costPerUnit||0);
+  });
+  el.style.display=usedCount>0?'':'none';
+  el.textContent=usedCount>0?usedCount+' item'+(usedCount!==1?'s':'')+' · '+p(totalCost):'';
+}
+
 function vAdj(key,prodId,vi,stockId,d){
   const stk=BIZ_STOCKS[key]||[];
   const item=stk.find(s=>s.id===stockId);
@@ -4992,7 +5011,14 @@ function vAdj(key,prodId,vi,stockId,d){
   const next=Math.max(0,Math.round((cur+d)*1000)/1000);
   if(next===0){delete vc[stockId];}
   else{vc[stockId]={stockId,stockName:item.name,qty:next,useUnit};}
-  renderVariantsModal(key,prodId,vi);
+  // Update only the affected input — no full re-render, scroll position preserved
+  const inputEl=document.getElementById('vi-'+prodId+'-'+vi+'-'+stockId);
+  if(inputEl){
+    inputEl.value=next||0;
+    patchVariantCostSummary(prodId,vi,key);
+  } else {
+    renderVariantsModal(key,prodId,vi);
+  }
 }
 
 function vSave(key,prodId,vi,stockId,val){
@@ -5019,7 +5045,8 @@ function vSet(key,prodId,vi,stockId,val){
   const ku=getItemUnits(item);
   const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
   if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
-  renderVariantsModal(key,prodId,vi);
+  // Update cost summary only — no full re-render, scroll position preserved
+  patchVariantCostSummary(prodId,vi,key);
 }
 
 function vUnitChange(key,prodId,vi,stockId,newUnit){
@@ -5031,7 +5058,8 @@ function vUnitChange(key,prodId,vi,stockId,newUnit){
   const vc=variantCarts[prodId][vi];
   if(vc[stockId]){vc[stockId].useUnit=newUnit;}
   else{vc[stockId]={stockId,stockName:item.name,qty:0,useUnit:newUnit};}
-  renderVariantsModal(key,prodId,vi);
+  // Update cost summary only — no full re-render, scroll position preserved
+  patchVariantCostSummary(prodId,vi,key);
 }
 
 function renderVariantsModal(key,prodId,activeVi){
@@ -5066,7 +5094,7 @@ function renderVariantsModal(key,prodId,activeVi){
               oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            ${usedCount>0?`<span style="font-size:10px;color:var(--accent)">${usedCount} item${usedCount!==1?'s':''} · ${p(totalCost)}</span>`:''}
+            ${usedCount>0?`<span id="vc-summary-${prodId}-${i}" style="font-size:10px;color:var(--accent)">${usedCount} item${usedCount!==1?'s':''} · ${p(totalCost)}</span>`:`<span id="vc-summary-${prodId}-${i}"></span>`}
             <input class="inp" placeholder="±₱" type="number" value="${v.priceAdj||''}"
               style="width:48px;font-size:11px;padding:3px 5px;text-align:center" title="Price adjustment"
               onclick="event.stopPropagation()"
