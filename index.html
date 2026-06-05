@@ -2390,12 +2390,12 @@ function buildReportsContent(key){
 
   // Payment breakdown
   const byMethod={Cash:0,GCash:0,Bank:0};
-  filteredLogs.forEach(l=>{if(l.method)byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
+  filteredLogs.forEach(l=>{if(l.method&&l.method!=='Credit/Utang')byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
 
   // Credit/Utang total — sum unpaid credits recorded within the current period
   const allCredits=Object.values(BIZ_CREDITS[key]||{});
   const creditUtangTotal=allCredits.filter(c=>{
-    if(!c.dateKey)return false;
+    if(!c.dateKey||c.status!=='unpaid')return false;
     if(per==='Today'){return c.dateKey===today;}
     const cd=new Date(c.dateKey);
     if(per==='Monthly'){return cd.getMonth()===now.getMonth()&&cd.getFullYear()===now.getFullYear();}
