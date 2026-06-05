@@ -2392,6 +2392,18 @@ function buildReportsContent(key){
   const byMethod={Cash:0,GCash:0,Bank:0};
   filteredLogs.forEach(l=>{if(l.method)byMethod[l.method]=(byMethod[l.method]||0)+(l.total||0);});
 
+  // Credit/Utang total — sum unpaid credits recorded within the current period
+  const allCredits=Object.values(BIZ_CREDITS[key]||{});
+  const creditUtangTotal=allCredits.filter(c=>{
+    if(!c.dateKey)return false;
+    if(per==='Today'){return c.dateKey===today;}
+    const cd=new Date(c.dateKey);
+    if(per==='Monthly'){return cd.getMonth()===now.getMonth()&&cd.getFullYear()===now.getFullYear();}
+    if(per==='Yearly'){return cd.getFullYear()===curYear;}
+    if(per==='Custom'&&customDate[key]){const cp=new Date(customDate[key]);return cd.toDateString()===cp.toDateString();}
+    return false;
+  }).reduce((s,c)=>s+(c.amount||0),0);
+
   const cdStr=customDate[key]?new Date(customDate[key]).toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}):'';
   const periodLabel=per==='Today'?`Today — ${todayShort}`:per==='Monthly'?`${now.toLocaleString('en-PH',{month:'long',year:'numeric'})}`:per==='Custom'?(cdStr||'Pick a date'):String(curYear);
   const reportTitle=per==='Today'?'📊 End of Day Report':per==='Monthly'?'📊 Monthly Report':per==='Custom'?`📊 Daily Report — ${cdStr||'Pick a date'}`:'📊 Yearly Report';
@@ -2438,6 +2450,7 @@ function buildReportsContent(key){
       <div class="sc"><div class="slb">Avg Sale</div><div class="sv b">${p(avgSale)}</div></div>
       <div class="sc"><div class="slb">Margin</div><div class="sv ${net>=0?'g':'r'}">${rev>0?Math.round(net/rev*100):0}%</div></div>
       ${Object.entries(byMethod).map(([m,v])=>`<div class="sc"><div class="slb">${m}</div><div class="sv" style="color:var(--text-primary)">${p(v)}</div></div>`).join('')}
+      <div class="sc"><div class="slb">Credit/Utang</div><div class="sv" style="color:var(--warning)">${p(creditUtangTotal)}</div></div>
     </div>
     ${(rev>0||exp>0)?`<div class="sl">📊 Revenue vs Expenses</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildRevExpChart(rev,exp)}</div>`:''}
     ${Object.values(byMethod).some(v=>v>0)?`<div class="sl">💳 Payment Breakdown</div><div class="cb" style="margin-bottom:8px;padding:10px 12px">${buildDonutChart(byMethod)}</div>`:''}
