@@ -947,8 +947,8 @@ function buildSell(key){
   const logs=BIZ_LOGS[key]||[];
   const cartCount=items.reduce((s,i)=>s+i.qty,0);
 
-  // Build category pills — only for xerox/printing
-  const CATEGORY_BIZ=['xerox'];
+  // Build category pills — only for xerox/printing and sari-sari
+  const CATEGORY_BIZ=['xerox','sari'];
   let catPillsHtml='';
   if(CATEGORY_BIZ.includes(key)){
     const cats=['All',...[...new Set(prods.map(p=>p.category).filter(Boolean))].sort()];
@@ -4210,7 +4210,7 @@ function getFullUnitsForCustomize(item,bizKey){
 // Perishable: deduct entire batch from stock when recipe is saved (cooked)
 const PERISHABLE_BIZ=['carenderia'];
 // Per-unit: deduct from stock each time a unit is sold
-const PERUNIT_BIZ=['xerox'];
+const PERUNIT_BIZ=['xerox','sari'];
 // Which businesses show the Customize button
 const CUSTOMIZE_BIZ=[...PERISHABLE_BIZ,...PERUNIT_BIZ];
 
@@ -4802,12 +4802,12 @@ function recordWaste(key,prodId,qty){
 
 function openAddProduct(key){
   const showCust=isCustomizeBiz(key);
-  const CATEGORY_BIZ=['xerox'];
+  const CATEGORY_BIZ=['xerox','sari'];
   const useCat=CATEGORY_BIZ.includes(key);
   const cats=useCat?[...new Set((BIZ_PRODUCTS[key]||[]).map(p=>p.category).filter(Boolean))].sort():[];
   const catDatalist=useCat?`<datalist id="ap-cat-list">${cats.map(c=>`<option value="${c}">`).join('')}</datalist>`:'';
   const thirdField=useCat
-    ?`${catDatalist}<input class="inp" id="ap-cat" list="ap-cat-list" placeholder="Category (e.g. Printing, Lamination, ID & Photos...)" style="margin-bottom:7px">`
+    ?`${catDatalist}<input class="inp" id="ap-cat" list="ap-cat-list" placeholder="Category (e.g. Beverages, Snacks, Personal Care...)" style="margin-bottom:7px">`
     :`<input class="inp" id="ap-unit" placeholder="Unit (per piece, per kilo...)" style="margin-bottom:7px">`;
   modal(`<div class="modal-t">Add New Product / Service</div>
     <input class="inp" id="ap-name" placeholder="Name">
