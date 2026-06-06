@@ -5536,7 +5536,7 @@ function doAddStock(key){
       ${sellToSell&&sellSummary?`<div style="background:var(--success-light);border:0.5px solid var(--success);border-radius:var(--radius-sm);padding:8px;font-size:11px;color:var(--success);margin-top:6px">✓ Will add to Sell tab: ${sellSummary}</div>`:''}
       <div class="mbtnrow">
         <button class="btn-c" onclick="rmModal()">Cancel</button>
-        <button class="btn-s" onclick="saveNewItem('${key}',${finalQty},'${stockUnit}',${cost},${low},${specAmt},'${specBaseUnit}',${sellToSell?1:0},'${sellCat.replace(/'/g,"\\'")}')">Add to Inventory</button>
+        <button class="btn-s" onclick="saveNewItem('${key}',${finalQty},'${stockUnit}',${cost},${low},'${lowUnit}',${specAmt},'${specBaseUnit}',${sellToSell?1:0},'${sellCat.replace(/'/g,"\\'")}')">Add to Inventory</button>
       </div>`);
   }
 }
@@ -5588,12 +5588,12 @@ function doAddStock_inner(key,name,qty,stockUnit,totalCost,low,lowUnit,specAmt,s
   }
 }
 
-function saveNewItem(key,qty,stockUnit,cost,low,specAmt,specBaseUnit,sellWasOn,sellCat){
+function saveNewItem(key,qty,stockUnit,cost,low,lowUnit,specAmt,specBaseUnit,sellWasOn,sellCat){
   const name=document.getElementById('ni-n')?.value.trim();
   const lo=parseInt(document.getElementById('ni-l')?.value)||low||2;
   if(!name){toast('Enter item name','err');return;}
   if(!BIZ_STOCKS[key])BIZ_STOCKS[key]=[];
-  const item={id:uid(),name,qty,stockUnit,cost,low:lo};
+  const item={id:uid(),name,qty,stockUnit,cost,low:lo,lowUnit:lowUnit||stockUnit};
   if(specAmt>0){item.specAmt=specAmt;item.specBaseUnit=specBaseUnit;}
   BIZ_STOCKS[key].push(item);
   // Only add to sell tab if toggle was explicitly ON and rows have prices
