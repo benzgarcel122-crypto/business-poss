@@ -1179,7 +1179,7 @@ function buildProductGrid(key,filtered){
     }
     // ────────────────────────────────────────────────────────────
 
-    const finalUnavailable=(isUnavailable&&!activeVariants.length)||variantBlocked||recipeBlocked;
+    const finalUnavailable=activeVariants.length>0?variantBlocked:((isUnavailable)||recipeBlocked);
 
     let stockBadge='';
     if(recipeBlocked&&!(hasStock&&(isOut||isUnavailable))){
