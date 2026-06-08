@@ -3416,6 +3416,20 @@ function addToCart(key,id){
   const s=prods.find(x=>x.id===id);
   if(!s)return;
   if(s.variants&&s.variants.filter(v=>v.name).length>0){
+    const activeVariants=s.variants.filter(v=>v.name);
+    // Single entry — behaves like direct add, no picker popup
+    if(activeVariants.length===1){
+      const v=activeVariants[0];
+      const cartKey=id+'__v'+v.id;
+      if(!cart[key][cartKey]){
+        const price=parseFloat(v.priceAdj)||s.price||0;
+        cart[key][cartKey]={id:cartKey,prodId:id,variantId:v.id,variantName:v.name,name:s.name+'('+v.name+')',price,qty:1,recipe:v.recipe||[]};
+      } else {
+        cart[key][cartKey].qty++;
+      }
+      lastPickedVariant[key+'_'+id]=cartKey;
+      renderCart(key);return;
+    }
     const existingLines=Object.keys(cart[key]).filter(k=>k.startsWith(id+'__v'));
     // Check if last picked variant is still in cart
     const lastKey=lastPickedVariant[key+'_'+id];
@@ -4824,34 +4838,8 @@ function openAddProduct(key){
 function showCustomizeChoiceExisting(key,prodId){
   const prod=(BIZ_PRODUCTS[key]||[]).find(x=>x.id===prodId);
   if(!prod)return;
-  const hasVariants=prod.variants&&prod.variants.filter(v=>v.name).length>0;
-  const hasRecipe=prod.recipe&&prod.recipe.length>0;
-  modal(`<div class="modal-t">⚙️ What do you want to set up?</div>
-    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5">Choose how <strong>${prod.name}</strong> works at the point of sale.</div>
-
-    <button onclick="rmModal();setTimeout(()=>openVariantsOnly('${key}',${prodId}),80)"
-      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid ${hasVariants?'var(--accent)':'var(--border-primary)'};border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:8px;transition:border-color .15s"
-      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${hasVariants?'var(--accent)':'var(--border-primary)'}'">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary)">⚡ Variants</div>
-        ${hasVariants?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px">${prod.variants.filter(v=>v.name).length} set</span>`:''}
-      </div>
-      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;margin-top:4px">Customer picks a type at checkout — e.g. Short / A4 / Long. One sell card, multiple selectable options. Each variant can link to its own stock and have a different price.</div>
-      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: Print, Photocopy, Lamination sizes</div>
-    </button>
-
-    <button onclick="rmModal();setTimeout(()=>openCustomize('${key}',${prodId}),80)"
-      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid ${hasRecipe?'var(--accent)':'var(--border-primary)'};border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:border-color .15s"
-      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='${hasRecipe?'var(--accent)':'var(--border-primary)'}'">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="font-size:13px;font-weight:700;color:var(--text-primary)">🧩 Ingredients / Stock Link</div>
-        ${hasRecipe?`<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px">${prod.recipe.length} set</span>`:''}
-      </div>
-      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5;margin-top:4px">Automatically deducts stock ingredients every time this product is sold. Customer doesn't choose — it just deducts in the background.</div>
-      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: recipes, bundles, or items that consume stock automatically</div>
-    </button>
-
-    <button class="btn-c" style="width:100%" onclick="rmModal()">Cancel</button>`);
+  rmModal();
+  setTimeout(()=>openVariantsOnly(key,prodId),80);
 }
 
 function showCustomizeChoice(key){
@@ -4869,26 +4857,8 @@ function showCustomizeChoice(key){
     if(category)prod.category=category;
   }
 
-  modal(`<div class="modal-t">⚙️ What do you want to set up?</div>
-    <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;line-height:1.5">Choose how this product works at the point of sale. You can always change this later from the product list.</div>
-
-    <button onclick="rmModal();setTimeout(()=>openVariantsOnly('${key}',${prod.id}),80)"
-      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid var(--border-primary);border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:8px;transition:border-color .15s"
-      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-primary)'">
-      <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px">⚡ Variants</div>
-      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">Customer picks a type at checkout — e.g. Short / A4 / Long. One sell card, multiple selectable options. Each variant can link to its own stock and have a different price.</div>
-      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: Print, Photocopy, Lamination sizes</div>
-    </button>
-
-    <button onclick="rmModal();setTimeout(()=>openCustomize('${key}',${prod.id}),80)"
-      style="width:100%;text-align:left;background:var(--bg-secondary);border:1.5px solid var(--border-primary);border-radius:var(--radius);padding:12px 14px;cursor:pointer;font-family:inherit;margin-bottom:12px;transition:border-color .15s"
-      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-primary)'">
-      <div style="font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:4px">🧩 Ingredients / Stock Link</div>
-      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">Automatically deducts stock ingredients every time this product is sold. Customer doesn't choose — it just deducts in the background.</div>
-      <div style="margin-top:6px;font-size:10px;font-weight:600;color:var(--accent)">Best for: recipes, bundles, or items that consume stock automatically</div>
-    </button>
-
-    <button class="btn-c" style="width:100%" onclick="rmModal()">Cancel</button>`);
+  rmModal();
+  setTimeout(()=>openVariantsOnly(key,prod.id),80);
 }
 
 // Variants-only modal — clean, focused UI just for adding variants
@@ -5081,7 +5051,6 @@ function renderVariantsModal(key,prodId,activeVi){
   const rows=variants.length===0
     ?`<div style="text-align:center;padding:20px 0;font-size:12px;color:var(--text-tertiary)">No variants yet — tap ＋ Add Variant below.</div>`
     :variants.map((v,i)=>{
-      const isOpen=(activeVi===i)||(activeVi===undefined&&variants.length===1);
       const ingRows=buildVariantIngRows(key,prodId,i);
       const vc=variantCarts[prodId]?.[i]||{};
       const usedCount=Object.values(vc).filter(r=>r.qty>0).length;
@@ -5092,46 +5061,50 @@ function renderVariantsModal(key,prodId,activeVi){
         const ku=getItemUnits(item);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
         totalCost+=r.qty*(ke?.costPerUnit||0);
       });
-      return`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);margin-bottom:8px;border:1.5px solid ${isOpen?'var(--accent)':'var(--border-primary)'}">
-        <!-- Variant header — tap to expand/collapse -->
-        <div onclick="renderVariantsModal('${key}',${prodId},${isOpen?'undefined':i})"
-          style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;cursor:pointer">
-          <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-            <span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-light);padding:2px 6px;border-radius:4px;flex-shrink:0">VAR ${i+1}</span>
-            <input class="inp" placeholder="Variant name (e.g. Short, A4, Long)" value="${v.name||''}"
-              style="flex:1;font-size:12px;font-weight:600;padding:4px 8px;border:none;background:transparent;color:var(--text-primary)"
-              onclick="event.stopPropagation()"
-              oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            ${usedCount>0?`<span id="vc-summary-${prodId}-${i}" style="font-size:10px;color:var(--accent)">${usedCount} item${usedCount!==1?'s':''} · ${p(totalCost)}</span>`:`<span id="vc-summary-${prodId}-${i}"></span>`}
-            <input class="inp" placeholder="±₱" type="number" value="${v.priceAdj||''}"
-              style="width:48px;font-size:11px;padding:3px 5px;text-align:center" title="Price adjustment"
-              onclick="event.stopPropagation()"
-              oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
-            <button onclick="event.stopPropagation();removeVariantRow('${key}',${prodId},${i});renderVariantsModal('${key}',${prodId})"
-              style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:12px;padding:0 2px;white-space:nowrap">✕</button>
-          </div>
+      const estLine=usedCount>0
+        ?`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0 0;border-top:0.5px solid var(--border-secondary);margin-top:4px">
+            <span style="font-size:10px;color:var(--text-tertiary)">${usedCount} stock item${usedCount!==1?'s':''}</span>
+            <span id="vc-summary-${prodId}-${i}" style="font-size:12px;font-weight:700;color:var(--text-primary)">Est. cost: ${p(totalCost)}</span>
+          </div>`
+        :`<span id="vc-summary-${prodId}-${i}" style="display:none"></span>`;
+      return`<div class="cr" style="flex-direction:column;align-items:stretch;padding:10px 12px;margin-bottom:4px">
+        <!-- Variant name + price + remove row -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+          <input class="inp" placeholder="Variant name (e.g. Short, A4, Long)" value="${v.name||''}"
+            style="flex:1;font-size:12px;font-weight:600;padding:5px 8px;margin-bottom:0"
+            oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
+          <input class="inp" placeholder="₱ Price" type="number" value="${v.priceAdj||''}"
+            style="width:72px;font-size:12px;padding:5px 7px;margin-bottom:0;text-align:right"
+            title="Sell price for this variant"
+            oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
+          <button onclick="removeVariantRow('${key}',${prodId},${i});renderVariantsModal('${key}',${prodId})"
+            style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;padding:0 2px;flex-shrink:0">✕</button>
         </div>
-        <!-- Expanded ingredient rows -->
-        ${isOpen?`<div style="border-top:0.5px solid var(--border-secondary);padding:4px 10px 8px">
-          <div style="font-size:9px;color:var(--text-tertiary);padding:6px 2px 2px;text-transform:uppercase;letter-spacing:.06em">Stock to deduct per sale</div>
-          ${ingRows}
-          <div style="font-size:10px;color:var(--text-tertiary);margin-top:6px;font-style:italic">🖨️ Stock deducts <strong>per unit sold</strong> at checkout.</div>
-        </div>`:''}
+        <!-- Stock deduction rows — ingredient style -->
+        <div style="font-size:9px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Stock to deduct per sale</div>
+        ${ingRows}
+        ${estLine}
       </div>`;
     }).join('');
 
-  const html=`<div class="modal-t">⚡ Variants — ${prod.name}</div>
-    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Each variant = one selectable option at checkout. Set the stock it deducts per sale. Tap a variant to expand.</div>
+  const modeNote=variants.length===1
+    ?`<div style="font-size:10px;color:var(--success);background:var(--success-light,#f0fdf4);border-radius:6px;padding:5px 10px;margin-bottom:8px">✅ Single entry — tapping this sell card adds directly to cart (no popup).</div>`
+    :variants.length>1
+    ?`<div style="font-size:10px;color:var(--accent);background:var(--accent-light);border-radius:6px;padding:5px 10px;margin-bottom:8px">⚡ Multiple variants — customer picks one at checkout.</div>`
+    :'';
+
+  const html=`<div class="modal-t">⚙️ Customize — ${prod.name}</div>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px">Set a name, price, and stock link per entry. 1 entry = direct add to cart. 2+ = customer picks at checkout.</div>
+    ${modeNote}
     <div id="variant-modal-rows" style="max-height:400px;overflow-y:auto;padding-right:2px">${rows}</div>
     <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId},${variants.length})"
       style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1.5px dashed var(--accent);background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;margin-bottom:10px">
       ＋ Add Variant
     </button>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px;font-style:italic">🖨️ Stock deducts per unit sold at checkout.</div>
     <div class="mbtnrow">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
-      <button class="btn-s" onclick="saveVariantsOnly('${key}',${prodId})">✓ Save Variants</button>
+      <button class="btn-s" onclick="saveVariantsOnly('${key}',${prodId})">✓ Save</button>
     </div>`;
 
   const existingModal=document.getElementById('_modal');
@@ -5144,17 +5117,22 @@ function saveVariantsOnly(key,prodId){
   const prod=prods.find(x=>x.id===prodId);
   if(!prod)return;
   const variants=(tempVariants[prodId]||[]).filter(v=>v.name&&v.name.trim());
-  if(!variants.length){toast('Add at least one variant name','err');return;}
+  if(!variants.length){toast('Add at least one entry name','err');return;}
   // Attach each variant's recipe from variantCarts
   variants.forEach((v,i)=>{
     const vc=variantCarts[prodId]?.[i]||{};
     v.recipe=Object.values(vc).filter(r=>r.qty>0);
   });
   prod.variants=variants;
+  // If single entry, set prod.price directly from that entry's price
+  if(variants.length===1&&variants[0].priceAdj){
+    const p1=parseFloat(variants[0].priceAdj);
+    if(!isNaN(p1)&&p1>0)prod.price=p1;
+  }
   tempVariants[prodId]=null;
   variantCarts[prodId]=null;
   saveData();rmModal();render();
-  setTimeout(()=>toast(`Variants saved for "${prod.name}" ✓`),50);
+  setTimeout(()=>toast(`Saved for "${prod.name}" ✓`),50);
 }
 
 // Open customize from the Add Product modal — no fields required
