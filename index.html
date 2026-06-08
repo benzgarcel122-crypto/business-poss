@@ -1206,9 +1206,10 @@ function buildCartRows(key,items){
   if(!items.length) return`<div class="le" style="padding:8px 0;font-size:11px">Tap a product above to add to cart</div>`;
   return items.map(i=>{
     const isVariant=String(i.id).includes('__v');
+    const isSingleVariant=isVariant&&i.singleVariant;
     const cartKey=i.id;
-    // For variant lines, show a "switch" button
-    const switchBtn=isVariant
+    // For variant lines with multiple variants, show a "switch" button
+    const switchBtn=isVariant&&!isSingleVariant
       ?`<button onclick="switchVariant('${key}',${i.prodId},'${cartKey}')" title="Add another variant"
           style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:5px;cursor:pointer;font-size:9px;color:var(--accent);padding:1px 5px;white-space:nowrap;font-family:inherit">＋ Variant</button>`
       :'';
@@ -3423,7 +3424,7 @@ function addToCart(key,id){
       const cartKey=id+'__v'+v.id;
       if(!cart[key][cartKey]){
         const price=parseFloat(v.priceAdj)||s.price||0;
-        cart[key][cartKey]={id:cartKey,prodId:id,variantId:v.id,variantName:v.name,name:s.name+'('+v.name+')',price,qty:1,recipe:v.recipe||[]};
+        cart[key][cartKey]={id:cartKey,prodId:id,variantId:v.id,variantName:v.name,name:s.name,price,qty:1,recipe:v.recipe||[],singleVariant:true};
       } else {
         cart[key][cartKey].qty++;
       }
