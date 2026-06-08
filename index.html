@@ -4811,7 +4811,6 @@ function openAddProduct(key){
     :`<input class="inp" id="ap-unit" placeholder="Unit (per piece, per kilo...)" style="margin-bottom:7px">`;
   modal(`<div class="modal-t">Add New Product / Service</div>
     <input class="inp" id="ap-name" placeholder="Name">
-    <input class="inp" id="ap-price" type="number" placeholder="Sell price ₱" style="margin-bottom:7px">
     ${thirdField}
     ${showCust?`<button class="cust-btn" style="width:100%;justify-content:center;margin-bottom:4px" onclick="showCustomizeChoice('${key}')">⚙️ Customize Ingredients</button>`:''}
     <div class="mbtnrow" style="margin-top:4px">
@@ -4858,16 +4857,14 @@ function showCustomizeChoiceExisting(key,prodId){
 function showCustomizeChoice(key){
   // First save the product draft silently
   const name=document.getElementById('ap-name')?.value.trim()||'New Product';
-  const price=parseFloat(document.getElementById('ap-price')?.value)||0;
   const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
   const category=(document.getElementById('ap-cat')?.value||'').trim();
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
   let prod=BIZ_PRODUCTS[key].find(p=>p.name.toLowerCase()===name.toLowerCase());
   if(!prod){
-    prod={id:uid(),name,price,cost:0,unit,category,pinned:false,recipe:[],batchYield:1,variants:[]};
+    prod={id:uid(),name,price:0,cost:0,unit,category,pinned:false,recipe:[],batchYield:1,variants:[]};
     BIZ_PRODUCTS[key].push(prod);
   } else {
-    if(price>0)prod.price=price;
     if(unit&&unit!=='per item')prod.unit=unit;
     if(category)prod.category=category;
   }
@@ -5164,16 +5161,14 @@ function saveVariantsOnly(key,prodId){
 // Saves product with whatever is filled (uses defaults for blanks), then opens customize
 function openCustFromAdd(key){
   const name=document.getElementById('ap-name')?.value.trim()||'New Product';
-  const price=parseFloat(document.getElementById('ap-price')?.value)||0;
   const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
   const category=(document.getElementById('ap-cat')?.value||'').trim();
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
   let prod=BIZ_PRODUCTS[key].find(p=>p.name.toLowerCase()===name.toLowerCase());
   if(!prod){
-    prod={id:uid(),name,price,cost:0,unit,category,pinned:false,recipe:[],batchYield:1};
+    prod={id:uid(),name,price:0,cost:0,unit,category,pinned:false,recipe:[],batchYield:1};
     BIZ_PRODUCTS[key].push(prod);
   } else {
-    if(price>0)prod.price=price;
     if(unit&&unit!=='per item')prod.unit=unit;
     if(category)prod.category=category;
   }
@@ -5182,13 +5177,11 @@ function openCustFromAdd(key){
 }
 function saveNewProduct(key){
   const name=document.getElementById('ap-name')?.value.trim();
-  const price=parseFloat(document.getElementById('ap-price')?.value)||0;
-  const cost=parseFloat(document.getElementById('ap-cost')?.value)||0;
   const unit=document.getElementById('ap-unit')?.value.trim()||'per item';
   const category=(document.getElementById('ap-cat')?.value||'').trim();
-  if(!name||price<=0){alert('Enter name and sell price');return;}
+  if(!name){toast('Enter product name','err');return;}
   if(!BIZ_PRODUCTS[key])BIZ_PRODUCTS[key]=[];
-  BIZ_PRODUCTS[key].push({id:uid(),name,price,cost,unit,category,pinned:false,recipe:[],batchYield:1});
+  BIZ_PRODUCTS[key].push({id:uid(),name,price:0,cost:0,unit,category,pinned:false,recipe:[],batchYield:1,variants:[]});
   saveData();rmModal();render();setTimeout(()=>toast(`"${name}" added ✓`),50);
 }
 function updPrice(key,id,v){const prods=BIZ_PRODUCTS[key]||[];const s=prods.find(x=>x.id===id);if(!s)return;const pr=parseFloat(v);if(!isNaN(pr)&&pr>0){s.price=pr;toast(`${s.name} → ${p(pr)} ✓`);}}
