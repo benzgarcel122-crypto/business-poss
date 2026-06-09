@@ -5063,7 +5063,7 @@ function toggleVariantExpand(prodId,i){
   const match=saveBtn.getAttribute('onclick').match(/saveVariantsOnly\('([^']+)',(\d+)\)/);
   if(!match)return;
   const key=match[1];const pId=parseInt(match[2]);
-  renderVariantsModal(key,pId);
+  renderVariantsModal(key,pId,null);
 }
 
 function renderVariantsModal(key,prodId,activeVi){
@@ -5072,14 +5072,10 @@ function renderVariantsModal(key,prodId,activeVi){
   if(!prod){rmModal();return;}
   const variants=tempVariants[prodId]||[];
 
-  // Initialize expanded set — first variant open by default, or newly added one
+  // Initialize expanded set — auto-open first only on fresh open (activeVi===undefined)
   if(!variantExpandedSet[prodId])variantExpandedSet[prodId]=new Set();
-  if(variants.length>0&&variantExpandedSet[prodId].size===0){
+  if(variants.length>0&&variantExpandedSet[prodId].size===0&&activeVi===undefined){
     variantExpandedSet[prodId].add(0);
-  }
-  // If activeVi passed (new variant added), expand it
-  if(activeVi!==undefined&&activeVi!==null){
-    variantExpandedSet[prodId].add(activeVi);
   }
 
   const rows=variants.length===0
@@ -5147,7 +5143,7 @@ function renderVariantsModal(key,prodId,activeVi){
     <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px">Set a name, price, and stock link per entry. 1 entry = direct add to cart. 2+ = customer picks at checkout.</div>
     ${modeNote}
     <div id="variant-modal-rows" style="max-height:400px;overflow-y:auto;padding-right:2px">${rows}</div>
-    <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId},${variants.length})"
+    <button onclick="addVariantRow('${key}',${prodId});renderVariantsModal('${key}',${prodId},null)"
       style="width:100%;padding:9px;border-radius:var(--radius-sm);border:1.5px dashed var(--accent);background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:6px;margin-bottom:10px">
       ＋ Add Variant
     </button>
