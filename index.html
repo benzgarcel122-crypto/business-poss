@@ -5035,8 +5035,9 @@ function vSave(key,prodId,vi,stockId,val){
   const vc=variantCarts[prodId][vi];
   const qty=parseFloat(val)||0;
   const ku=getItemUnits(item);
+  // Preserve useUnit even when qty=0 — don't delete, keeps unit selection intact while typing
   const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
-  if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
+  vc[stockId]={stockId,stockName:item.name,qty,useUnit};
   // Real-time cost update on every keystroke
   patchVariantCostSummary(prodId,vi,key);
 }
@@ -5050,8 +5051,9 @@ function vSet(key,prodId,vi,stockId,val){
   const vc=variantCarts[prodId][vi];
   const qty=parseFloat(val)||0;
   const ku=getItemUnits(item);
+  // Preserve useUnit on qty=0 — only delete when − button explicitly zeroes out
   const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
-  if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
+  vc[stockId]={stockId,stockName:item.name,qty,useUnit};
   // Update cost summary only — no full re-render, scroll position preserved
   patchVariantCostSummary(prodId,vi,key);
 }
@@ -5063,9 +5065,10 @@ function vUnitChange(key,prodId,vi,stockId,newUnit){
   if(!variantCarts[prodId])variantCarts[prodId]={};
   if(!variantCarts[prodId][vi])variantCarts[prodId][vi]={};
   const vc=variantCarts[prodId][vi];
-  if(vc[stockId]){vc[stockId].useUnit=newUnit;}
-  else{vc[stockId]={stockId,stockName:item.name,qty:0,useUnit:newUnit};}
-  // Update cost summary only — no full re-render, scroll position preserved
+  // Always preserve qty, just update unit
+  const qty=vc[stockId]?.qty||0;
+  vc[stockId]={stockId,stockName:item.name,qty,useUnit:newUnit};
+  // Update cost summary — no full re-render, scroll position preserved
   patchVariantCostSummary(prodId,vi,key);
 }
 
