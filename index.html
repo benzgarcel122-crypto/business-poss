@@ -4534,7 +4534,7 @@ function renderCustomizeModal(key,prodId){
       return divider+`<div class="cr" style="${isOutOfStock?'opacity:0.4;pointer-events:none;filter:grayscale(0.5)':''}">
         <div style="flex:1;min-width:0">
           <div class="crn" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">${s.name}${stockBadge}</div>
-          <div style="font-size:10px;color:var(--text-tertiary)">${cpuDisplay}/${useUnit}${useQty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:''}</div>
+          <div style="font-size:10px;color:var(--text-tertiary)">${cpuDisplay}/${useUnit}<span id="vrc-${prodId}-${vi}-${rawBatch.id}">${useQty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:''}</span></div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
           <div class="qw">
@@ -4550,7 +4550,7 @@ function renderCustomizeModal(key,prodId){
             :`<span style="font-size:10px;color:var(--text-tertiary)">${useUnit}</span>`
           }
         </div>
-        <span class="crp" style="min-width:44px;align-self:center">${useQty>0?p(rowCost):''}</span>
+        <span class="crp" id="vrcp-${prodId}-${vi}-${rawBatch.id}" style="min-width:44px;align-self:center">${useQty>0?p(rowCost):''}</span>
       </div>`;
     }).join('');
 
@@ -4944,7 +4944,7 @@ function buildVariantIngRows(key,prodId,vi){
     return divider+`<div class="cr" style="${isOut?'opacity:0.4;pointer-events:none;filter:grayscale(0.5)':''}">
       <div style="flex:1;min-width:0">
         <div class="crn" style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">${s.name}${stockBadge}</div>
-        <div style="font-size:10px;color:var(--text-tertiary)">${cpuDisplay}/${useUnit}${useQty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:''}</div>
+        <div style="font-size:10px;color:var(--text-tertiary)">${cpuDisplay}/${useUnit}<span id="vrc-${prodId}-${vi}-${rawBatch.id}">${useQty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:''}</span></div>
       </div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
         <div class="qw">
@@ -4961,7 +4961,7 @@ function buildVariantIngRows(key,prodId,vi){
           :`<span style="font-size:10px;color:var(--text-tertiary)">${useUnit}</span>`
         }
       </div>
-      <span class="crp" style="min-width:44px;align-self:center">${useQty>0?p(rowCost):''}</span>
+      <span class="crp" id="vrcp-${prodId}-${vi}-${rawBatch.id}" style="min-width:44px;align-self:center">${useQty>0?p(rowCost):''}</span>
     </div>`;
   }).join('');
 }
@@ -4969,18 +4969,38 @@ function buildVariantIngRows(key,prodId,vi){
 function patchVariantCostSummary(prodId,vi,key){
   // Update only the cost summary span — no full re-render, scroll preserved
   const el=document.getElementById('vc-summary-'+prodId+'-'+vi);
-  if(!el)return;
   const stk=BIZ_STOCKS[key]||[];
   const vc=variantCarts[prodId]?.[vi]||{};
   const usedCount=Object.values(vc).filter(r=>r.qty>0).length;
   let totalCost=0;
-  Object.values(vc).forEach(r=>{
+  // Update per-row cost displays and accumulate total
+  Object.keys(vc).forEach(stockId=>{
+    const r=vc[stockId];
     const item=stk.find(s=>s.id===r.stockId);if(!item)return;
     const ku=getItemUnits(item);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
-    totalCost+=r.qty*(ke?.costPerUnit||0);
+    const rowCost=r.qty*(ke?.costPerUnit||0);
+    totalCost+=rowCost;
+    // Update per-row hint
+    const hintEl=document.getElementById('vrc-'+prodId+'-'+vi+'-'+stockId);
+    if(hintEl)hintEl.innerHTML=r.qty>0?` · <strong style="color:var(--accent)">${p(rowCost)}</strong>`:'';
+    // Update per-row right price
+    const rcpEl=document.getElementById('vrcp-'+prodId+'-'+vi+'-'+stockId);
+    if(rcpEl)rcpEl.textContent=r.qty>0?p(rowCost):'';
   });
-  el.style.display=usedCount>0?'':'none';
-  el.textContent=usedCount>0?usedCount+' item'+(usedCount!==1?'s':'')+' · '+p(totalCost):'';
+  // Also clear rows that were zeroed out (deleted from vc)
+  document.querySelectorAll('[id^="vrc-'+prodId+'-'+vi+'-"]').forEach(el=>{
+    const stockId=el.id.split('-').pop();
+    if(!vc[stockId]||!(vc[stockId].qty>0)){el.innerHTML='';}
+  });
+  document.querySelectorAll('[id^="vrcp-'+prodId+'-'+vi+'-"]').forEach(el=>{
+    const stockId=el.id.split('-').pop();
+    if(!vc[stockId]||!(vc[stockId].qty>0)){el.textContent='';}
+  });
+  // Update summary header
+  if(el){
+    el.style.display=usedCount>0?'':'none';
+    el.textContent=usedCount>0?usedCount+' item'+(usedCount!==1?'s':'')+' · '+p(totalCost):'';
+  }
 }
 
 function vAdj(key,prodId,vi,stockId,d){
@@ -5017,6 +5037,8 @@ function vSave(key,prodId,vi,stockId,val){
   const ku=getItemUnits(item);
   const useUnit=vc[stockId]?.useUnit||(ku[0]?.unit||item.stockUnit||'pc');
   if(qty<=0){delete vc[stockId];}else{vc[stockId]={stockId,stockName:item.name,qty,useUnit};}
+  // Real-time cost update on every keystroke
+  patchVariantCostSummary(prodId,vi,key);
 }
 
 function vSet(key,prodId,vi,stockId,val){
