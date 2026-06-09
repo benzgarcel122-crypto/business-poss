@@ -1180,7 +1180,6 @@ function buildProductGrid(key,filtered){
     // ────────────────────────────────────────────────────────────
 
     const finalUnavailable=activeVariants.length>0?variantBlocked:((isUnavailable)||recipeBlocked);
-    if(activeVariants.length>0)console.log('[DEBUG]',s.name,'activeVariants:',activeVariants.length,'variantBlocked:',variantBlocked,'allVariantsOut:',activeVariants.every(v=>{const r=v.recipe||[];if(r.length===0)return false;return r.some(ri=>{if(!ri.stockId)return false;const si=stocks.find(st=>String(st.id)===String(ri.stockId));if(!si)return true;const sm=getStockSummary(key,si.name);return(sm?.totalBase||0)<(ri.qty||1);});}));
 
     let stockBadge='';
     if(recipeBlocked&&!(hasStock&&(isOut||isUnavailable))){
@@ -3430,7 +3429,7 @@ function addToCart(key,id){
         cart[key][cartKey].qty++;
       }
       lastPickedVariant[key+'_'+id]=cartKey;
-      renderCart(key);return;
+      patchCart(key);return;
     }
     const existingLines=Object.keys(cart[key]).filter(k=>k.startsWith(id+'__v'));
     // Check if last picked variant is still in cart
