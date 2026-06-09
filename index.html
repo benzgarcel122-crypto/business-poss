@@ -5054,11 +5054,16 @@ function toggleVariantExpand(prodId,i){
   if(!variantExpandedSet[prodId])variantExpandedSet[prodId]=new Set();
   if(variantExpandedSet[prodId].has(i))variantExpandedSet[prodId].delete(i);
   else variantExpandedSet[prodId].add(i);
-  // Toggle the body div directly — no full re-render, scroll preserved
-  const body=document.getElementById('vbody-'+prodId+'-'+i);
-  const arrow=document.getElementById('varrow-'+prodId+'-'+i);
-  if(body){body.style.display=variantExpandedSet[prodId].has(i)?'block':'none';}
-  if(arrow){arrow.textContent=variantExpandedSet[prodId].has(i)?'▲':'▼';}
+  // Need full re-render since collapsed header is conditionally rendered
+  const modal=document.getElementById('_modal');
+  if(!modal)return;
+  // Find the key from the save button onclick
+  const saveBtn=modal.querySelector('[onclick*="saveVariantsOnly"]');
+  if(!saveBtn)return;
+  const match=saveBtn.getAttribute('onclick').match(/saveVariantsOnly\('([^']+)',(\d+)\)/);
+  if(!match)return;
+  const key=match[1];const pId=parseInt(match[2]);
+  renderVariantsModal(key,pId);
 }
 
 function renderVariantsModal(key,prodId,activeVi){
@@ -5099,26 +5104,28 @@ function renderVariantsModal(key,prodId,activeVi){
           </div>`
         :`<span id="vc-summary-${prodId}-${i}" style="display:none"></span>`;
       return`<div style="background:var(--bg-secondary);border:1px solid var(--border-primary);border-radius:var(--radius-sm);margin-bottom:6px;overflow:hidden">
-        <!-- Collapsible header — tap to toggle -->
-        <div onclick="toggleVariantExpand(${prodId},${i})"
+        <!-- Collapsed header — only visible when closed -->
+        ${!isOpen?`<div onclick="toggleVariantExpand(${prodId},${i})"
           style="display:flex;align-items:center;gap:6px;padding:10px 12px;cursor:pointer;user-select:none">
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;font-weight:700;color:var(--text-primary)">${v.name||'(unnamed)'}</div>
             <div style="font-size:10px;color:var(--text-tertiary)">${v.priceAdj?'₱'+v.priceAdj:'No price set'}${costHint}</div>
           </div>
-          <span id="varrow-${prodId}-${i}" style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">${isOpen?'▲':'▼'}</span>
-        </div>
-        <!-- Expanded body -->
-        <div id="vbody-${prodId}-${i}" style="display:${isOpen?'block':'none'};border-top:0.5px solid var(--border-secondary);padding:10px 12px">
-          <!-- Name + price + remove -->
+          <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">▼</span>
+        </div>`:''}
+        <!-- Expanded body — visible when open -->
+        <div id="vbody-${prodId}-${i}" style="display:${isOpen?'block':'none'};padding:10px 12px">
+          <!-- Name + price + collapse button -->
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
             <input class="inp" placeholder="Variant name (e.g. Short, A4, Long)" value="${v.name||''}"
               style="flex:1;font-size:12px;font-weight:600;padding:5px 8px;margin-bottom:0"
-              oninput="updateVariantField('${key}',${prodId},${i},'name',this.value);document.querySelector('#vbody-${prodId}-${i}').previousElementSibling.querySelector('div>div').textContent=this.value||'(unnamed)'">
+              oninput="updateVariantField('${key}',${prodId},${i},'name',this.value)">
             <input class="inp" placeholder="₱ Price" type="number" value="${v.priceAdj||''}"
               style="width:72px;font-size:12px;padding:5px 7px;margin-bottom:0;text-align:right"
               title="Sell price for this variant"
               oninput="updateVariantField('${key}',${prodId},${i},'priceAdj',this.value)">
+            <button onclick="toggleVariantExpand(${prodId},${i})"
+              style="background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-size:12px;padding:0 2px;flex-shrink:0" title="Collapse">▲</button>
             <button onclick="event.stopPropagation();removeVariantRow('${key}',${prodId},${i});variantExpandedSet[${prodId}]&&variantExpandedSet[${prodId}].delete(${i});renderVariantsModal('${key}',${prodId})"
               style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:14px;padding:0 2px;flex-shrink:0">✕</button>
           </div>
