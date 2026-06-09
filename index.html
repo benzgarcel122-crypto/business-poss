@@ -3425,8 +3425,10 @@ function addToCart(key,id){
       if(!cart[key][cartKey]){
         const price=parseFloat(v.priceAdj)||s.price||0;
         cart[key][cartKey]={id:cartKey,prodId:id,variantId:v.id,variantName:v.name,name:s.name,price,qty:1,recipe:v.recipe||[],singleVariant:true};
+        reserveVariantByRecipe(key,v,1,1);
       } else {
         cart[key][cartKey].qty++;
+        reserveVariantByRecipe(key,v,1,1);
       }
       lastPickedVariant[key+'_'+id]=cartKey;
       patchCart(key);return;
