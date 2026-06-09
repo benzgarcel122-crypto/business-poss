@@ -4905,9 +4905,10 @@ function buildVariantIngRows(key,prodId,vi){
   });
 
   return sorted.map((s,idx)=>{
-    // getFullUnitsForCustomize needs a raw stock batch, not a summary
+    // getFullUnitsForCustomize needs structural props from rawBatch but WAC cost from summary
     const rawBatch=stk.find(b=>b.name.toLowerCase()===s.name.toLowerCase())||s;
-    const ku=getFullUnitsForCustomize(rawBatch,key);
+    const batchWithWAC={...rawBatch,cost:s.cost}; // inject WAC so costPerUnit is always current
+    const ku=getFullUnitsForCustomize(batchWithWAC,key);
     const inVC=vc[s.id]||vc[rawBatch.id];
     const useUnit=inVC?.useUnit||(ku[0]?.unit||rawBatch.stockUnit||'pc');
     const useQty=inVC?.qty||0;
