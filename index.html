@@ -4977,7 +4977,9 @@ function patchVariantCostSummary(prodId,vi,key){
   Object.keys(vc).forEach(stockId=>{
     const r=vc[stockId];
     const item=stk.find(s=>s.id===r.stockId);if(!item)return;
-    const ku=getItemUnits(item);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
+    // Use getStockSummary for WAC-based cost, not raw batch cost
+    const smry=getStockSummary(key,item.name)||item;
+    const ku=getItemUnits(smry);const ke=ku.find(u=>u.unit===r.useUnit)||ku[0];
     const rowCost=r.qty*(ke?.costPerUnit||0);
     totalCost+=rowCost;
     // Update per-row hint
