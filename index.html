@@ -5110,7 +5110,7 @@ function renderVariantsModal(key,prodId,activeVi){
           <span style="font-size:10px;color:var(--text-tertiary);flex-shrink:0">▼</span>
         </div>`:''}
         <!-- Expanded body — visible when open -->
-        <div id="vbody-${prodId}-${i}" style="display:${isOpen?'block':'none'};padding:10px 12px">
+        <div id="vbody-${prodId}-${i}" style="display:${isOpen?'block':'none'};padding:10px 12px;max-height:260px;overflow-y:auto">
           <!-- Name + price + collapse button -->
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
             <input class="inp" placeholder="Variant name (e.g. Short, A4, Long)" value="${v.name||''}"
