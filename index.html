@@ -1870,6 +1870,11 @@ function openEditStock(key,stockId){
       <select class="inp" id="es-qunit" style="margin-bottom:0">${qUnitOptsHtml}</select>
     </div>
     <div style="font-size:11px;color:var(--text-secondary);padding:4px 0">Cost: <strong>${costLabel}</strong> (WAC — auto managed)</div>
+    <div style="margin-bottom:6px">
+      <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:3px">Total cost paid for this batch <span style="color:var(--accent)">(edit to correct)</span></div>
+      <input class="inp" id="es-totalcost" type="number" min="0" step="any" placeholder="Total cost ₱"
+        value="${s.specAmt>0?safeRound(s.cost*s.qty*s.specAmt):safeRound(s.cost*s.qty)}" style="margin-bottom:0">
+    </div>
     <button type="button" onclick="toggleEditSpec()"
       style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--bg-tertiary);border:0.5px solid var(--border-secondary);border-radius:var(--radius-sm);cursor:pointer;font-family:inherit;font-size:11px;color:var(--text-secondary);font-weight:600;margin-bottom:0">
       <span>📦 Specify contents</span><span id="es-spec-arrow" style="font-size:10px;transition:transform .2s">${s.specAmt>0?'▴':'▾'}</span>
@@ -1976,6 +1981,23 @@ function saveEditStock(key,stockId){
   item.low=low;
   item.lowUnit=lowUnit;
   if(specAmt>0){item.specAmt=specAmt;item.specBaseUnit=specUnit;}
+
+  // Update total cost if changed — recalculate batch cost and update linked expense
+  const totalCostEl=document.getElementById('es-totalcost');
+  const newTotalCost=parseFloat(totalCostEl?.value)||0;
+  if(newTotalCost>0){
+    const baseQty=item.specAmt>0?item.qty*item.specAmt:item.qty;
+    const newCostPerUnit=baseQty>0?safeRound(newTotalCost/baseQty):item.cost;
+    item.cost=newCostPerUnit;
+    // Update linked expense if expenseId exists
+    if(item.expenseId&&BIZ_EXPLOGS[key]){
+      const exp=BIZ_EXPLOGS[key].find(e=>String(e.id)===String(item.expenseId));
+      if(exp){
+        exp.amount=newTotalCost;
+        exp.desc=`Stock: ${name} (+${item.qty} ${item.stockUnit})`;
+      }
+    }
+  }
   // Sell tab sync
   const esSellBody=document.getElementById('es-sell-body');
   const sellOn=esSellBody&&esSellBody.style.display!=='none';
@@ -2013,7 +2035,9 @@ function confirmDeleteStock(key,stockId){
   const isLastBatch=remainingAfter.length===0;
   const sellInfo=isLastBatch&&sellCount>0?('<div style="background:var(--warning-light);border:0.5px solid var(--warning);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--warning);margin-bottom:8px">⚠️ Last batch — '+sellCount+' sell listing'+(sellCount>1?'s':'')+' for "'+s.name+'" will also be removed from Sell tab.</div>'):'';
   const batchInfo=!isLastBatch?('<div style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--accent);margin-bottom:8px">ℹ️ '+remainingAfter.length+' other batch'+(remainingAfter.length>1?'es':'')+' of "'+s.name+'" will remain in stock.</div>'):'';
-  const expNote='<div style="background:var(--bg-tertiary);border:0.5px solid var(--border-secondary);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--text-tertiary);margin-bottom:8px">💡 Purchase expenses are preserved in your records. Delete them manually in Others → Expenses if needed.</div>';
+  const expNote=s.expenseId
+    ?'<div style="background:var(--warning-light);border:0.5px solid var(--warning);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--warning);margin-bottom:8px">⚠️ The linked purchase expense for this batch will also be deleted and removed from Reports.</div>'
+    :'<div style="background:var(--bg-tertiary);border:0.5px solid var(--border-secondary);border-radius:var(--radius-sm);padding:8px 10px;font-size:11px;color:var(--text-tertiary);margin-bottom:8px">💡 No linked expense found for this batch. Delete expenses manually in Others → Expenses if needed.</div>';
 
   modal(`<div class="modal-t">🗑️ Delete Stock Batch</div>
     <div style="font-size:13px;color:var(--text-primary);margin-bottom:8px">Remove this batch of <strong>${s.name}</strong>?</div>
@@ -2030,6 +2054,10 @@ function confirmDeleteStock(key,stockId){
 function deleteStock(key,stockId){
   const s=(BIZ_STOCKS[key]||[]).find(x=>String(x.id)===String(stockId));
   const deletedName=s?s.name.toLowerCase():'';
+  // Delete linked expense if exists
+  if(s&&s.expenseId&&BIZ_EXPLOGS[key]){
+    BIZ_EXPLOGS[key]=BIZ_EXPLOGS[key].filter(e=>String(e.id)!==String(s.expenseId));
+  }
   BIZ_STOCKS[key]=(BIZ_STOCKS[key]||[]).filter(x=>String(x.id)!==String(stockId));
   const remainingBatches=(BIZ_STOCKS[key]||[]).filter(x=>x.name.toLowerCase()===deletedName);
   const isLastBatch=remainingBatches.length===0;
@@ -5791,12 +5819,13 @@ function doAddStock(key){
     const newWAC=totalBaseQty>0?(exValue+totalCost)/totalBaseQty:cost;
     const wacLabel=hasSpec?`${p(newWAC)}/${specBaseUnit}`:`${p(newWAC)}/${stockUnit}`;
     // Always create a NEW batch row
-    const newBatch={id:uid(),name,qty,stockUnit,cost:safeRound(cost),low:existingBatches[0].low||low,lowUnit:lowUnit};
+    const expId=uid();
+    const newBatch={id:uid(),name,qty,stockUnit,cost:safeRound(cost),low:existingBatches[0].low||low,lowUnit:lowUnit,expenseId:expId};
     if(hasSpec){newBatch.specAmt=specAmt;newBatch.specBaseUnit=specBaseUnit;}
     BIZ_STOCKS[key].push(newBatch);
     if(sellToSell)activeSellRows.forEach(r=>addToSellTab(key,name,parseFloat(r.price),r.unit||stockUnit,sellCat));
     if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
-    BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
+    BIZ_EXPLOGS[key].push({id:expId,desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
     saveData();render();
@@ -5853,12 +5882,13 @@ function doAddStock_inner(key,name,qty,stockUnit,totalCost,low,lowUnit,specAmt,s
     const totalBaseQty=exBaseQty+newBaseQty;
     const newWAC=totalBaseQty>0?(exValue+totalCost)/totalBaseQty:cost;
     const wacLabel=hasSpec?`${p(newWAC)}/${specBaseUnit}`:`${p(newWAC)}/${stockUnit}`;
-    const newBatch={id:uid(),name,qty,stockUnit,cost:safeRound(cost),low:existingBatches[0].low||low,lowUnit:lowUnit};
+    const expId=uid();
+    const newBatch={id:uid(),name,qty,stockUnit,cost:safeRound(cost),low:existingBatches[0].low||low,lowUnit:lowUnit,expenseId:expId};
     if(hasSpec){newBatch.specAmt=specAmt;newBatch.specBaseUnit=specBaseUnit;}
     BIZ_STOCKS[key].push(newBatch);
     if(sellToSell)activeSellRows.forEach(r=>addToSellTab(key,name,parseFloat(r.price),r.unit||stockUnit,sellCat));
     if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
-    BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
+    BIZ_EXPLOGS[key].push({id:expId,desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalCost,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
     saveData();render();
@@ -5871,7 +5901,8 @@ function saveNewItem(key,qty,stockUnit,cost,low,lowUnit,specAmt,specBaseUnit,sel
   const lo=parseInt(document.getElementById('ni-l')?.value)||low||2;
   if(!name){toast('Enter item name','err');return;}
   if(!BIZ_STOCKS[key])BIZ_STOCKS[key]=[];
-  const item={id:uid(),name,qty,stockUnit,cost,low:lo,lowUnit:lowUnit||stockUnit};
+  const expId=uid();
+  const item={id:uid(),name,qty,stockUnit,cost,low:lo,lowUnit:lowUnit||stockUnit,expenseId:expId};
   if(specAmt>0){item.specAmt=specAmt;item.specBaseUnit=specBaseUnit;}
   BIZ_STOCKS[key].push(item);
   // Only add to sell tab if toggle was explicitly ON and rows have prices
@@ -5881,7 +5912,7 @@ function saveNewItem(key,qty,stockUnit,cost,low,lowUnit,specAmt,specBaseUnit,sel
   const totalPaid=cost*(specAmt>0?qty*specAmt:qty);
   if(totalPaid>0){
     if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
-    BIZ_EXPLOGS[key].push({id:uid(),desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalPaid,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
+    BIZ_EXPLOGS[key].push({id:expId,desc:`Stock: ${name} (+${qty} ${stockUnit})`,amount:totalPaid,cat:'Stock Purchase',time:ts(),dateKey:dateKey(),auto:true});
     if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost:totalPaid,costPerUnit:safeRound(cost),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
   }
