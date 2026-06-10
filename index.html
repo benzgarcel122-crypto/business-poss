@@ -4975,7 +4975,7 @@ function renderWasteModal(key,type,selectedId,wasteQty,wasteUnit,selectedVariant
   const html=`<div class="modal-t">🗑️ Record Waste / Error</div>
     <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Select a stock item or product. Ingredients will be auto-deducted from inventory.</div>
     ${tabHtml}
-    <div class="cb" style="padding:4px 8px;max-height:150px;overflow-y:auto;margin-bottom:10px">${listHtml}</div>
+    <div id="waste-item-list" class="cb" style="padding:4px 8px;max-height:150px;overflow-y:auto;margin-bottom:10px">${listHtml}</div>
     ${detailHtml}
     ${logHtml}
     <div class="mbtnrow" style="margin-top:10px">
@@ -4984,8 +4984,13 @@ function renderWasteModal(key,type,selectedId,wasteQty,wasteUnit,selectedVariant
     </div>`;
 
   const existingModal=document.getElementById('_modal');
+  // Save scroll position before re-render
+  const prevScroll=document.getElementById('waste-item-list')?.scrollTop||0;
   if(existingModal){existingModal.querySelector('.modal').innerHTML=html;}
   else{modal(html);}
+  // Restore scroll position after re-render
+  const listEl=document.getElementById('waste-item-list');
+  if(listEl)listEl.scrollTop=prevScroll;
 }
 
 function recordWaste(key,type,selectedId,qty,wasteUnit,selectedVariantId){
