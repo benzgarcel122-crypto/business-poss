@@ -1281,30 +1281,34 @@ function editCategory(key,cat){
   const stk=BIZ_STOCKS[key]||[];
   const prodRows=prods.map(pr=>{
     const hasRecipe=pr.recipe&&pr.recipe.length>0;
-    // Build recipe summary if product has ingredients
+    const hasVariants=pr.variants&&pr.variants.filter(v=>v.name).length>0;
+    const showCustomize=hasRecipe||hasVariants;
+    // Build recipe/variant summary
     let recipeHtml='';
-    if(hasRecipe){
-      // Calc est. cost from recipe
-      const estCost=pr.recipe.reduce((sum,ing)=>{
-        const item=stk.find(s=>s.id===ing.stockId);
-        if(!item)return sum;
-        const ku=getItemUnits(item);
-        const kuEntry=ku.find(u=>u.unit===ing.useUnit)||ku[0];
-        return sum+ing.qty*(kuEntry?.costPerUnit||0);
-      },0);
-      const ingrList=pr.recipe.map(ing=>
-        `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 6px;margin:1px">${ing.stockName} ×${ing.qty} ${ing.useUnit}</span>`
-      ).join('');
-      recipeHtml=`
-        <div style="margin-top:6px;padding:6px 8px;background:var(--bg-secondary);border:0.5px solid var(--border-secondary);border-radius:var(--radius-sm)">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    if(showCustomize){
+      let summaryContent='';
+      if(hasVariants){
+        const activeVariants=pr.variants.filter(v=>v.name);
+        const variantTags=activeVariants.map(v=>`<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 6px;margin:1px">${v.name}${v.priceAdj?' · ₱'+v.priceAdj:''}</span>`).join('');
+        summaryContent=`<div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">${variantTags}</div>`;
+      } else if(hasRecipe){
+        const estCost=pr.recipe.reduce((sum,ing)=>{
+          const item=stk.find(s=>s.id===ing.stockId);if(!item)return sum;
+          const ku=getItemUnits(item);const kuEntry=ku.find(u=>u.unit===ing.useUnit)||ku[0];
+          return sum+ing.qty*(kuEntry?.costPerUnit||0);
+        },0);
+        const ingrList=pr.recipe.map(ing=>`<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 6px;margin:1px">${ing.stockName} ×${ing.qty} ${ing.useUnit}</span>`).join('');
+        summaryContent=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
             <span style="font-size:9px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em">⚙️ Recipe</span>
             <span style="font-size:10px;font-weight:700;color:var(--accent)">Est. cost: ${p(estCost)}</span>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">${ingrList}</div>
-          <button onclick="rmModal();showCustomizeChoiceExisting('${key}',${pr.id})"
+          <div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:6px">${ingrList}</div>`;
+      }
+      recipeHtml=`<div style="margin-top:6px;padding:6px 8px;background:var(--bg-secondary);border:0.5px solid var(--border-secondary);border-radius:var(--radius-sm)">
+          ${summaryContent}
+          <button onclick="rmModal();setTimeout(()=>showCustomizeChoiceExisting('${key}',${pr.id}),80)"
             style="width:100%;padding:5px;font-size:11px;font-weight:600;border-radius:6px;border:0.5px solid var(--accent);background:var(--accent-light);color:var(--accent);cursor:pointer;font-family:inherit">
-            ⚙️ Edit Recipe / Variants
+            ⚙️ Edit ${hasVariants?'Variants':'Recipe'}
           </button>
         </div>`;
     }
