@@ -4702,123 +4702,281 @@ function saveCustomize(key,prodId){
 function openWasteModal(key){
   initBizData(key);
   const stk=BIZ_STOCKS[key]||[];
-  if(!stk.length){
-    toast('No stock items yet. Add stock first.','err');
+  const prods=BIZ_PRODUCTS[key]||[];
+  const hasStock=stk.length>0;
+  const hasProds=prods.some(p=>(p.recipe&&p.recipe.length>0)||(p.variants&&p.variants.filter(v=>v.name).length>0));
+  if(!hasStock&&!hasProds){
+    toast('No stock items or products yet.','err');
     return;
   }
   if(!BIZ_WASTELOGS[key])BIZ_WASTELOGS[key]=[];
-  renderWasteModal(key,null,0,null);
+  renderWasteModal(key,'stock',null,0,null,null);
 }
 
-function renderWasteModal(key,selectedStockName,wasteQty,wasteUnit){
+// type: 'stock' or 'product'
+// selectedId: stockName (for stock) or prodId (for product)
+// selectedVariantId: variantId (for multi-variant products)
+function renderWasteModal(key,type,selectedId,wasteQty,wasteUnit,selectedVariantId){
   initBizData(key);
   const stk=BIZ_STOCKS[key]||[];
+  const prods=BIZ_PRODUCTS[key]||[];
   const logs=(BIZ_WASTELOGS[key]||[]).slice().reverse().slice(0,5);
 
-  // Deduplicate stock by name using getStockSummary
+  // === STOCK ITEMS (deduplicated) ===
   const seenNames=new Set();const uniqueStk=[];
   stk.forEach(s=>{
     const n=s.name.toLowerCase();
     if(!seenNames.has(n)){seenNames.add(n);uniqueStk.push(getStockSummary(key,s.name));}
   });
 
-  const selSmry=selectedStockName?uniqueStk.find(s=>s.name===selectedStockName):null;
+  // === PRODUCTS WITH RECIPES OR VARIANTS ===
+  const recipedProds=prods.filter(p=>
+    (p.recipe&&p.recipe.length>0)||(p.variants&&p.variants.filter(v=>v.name&&(v.recipe&&v.recipe.length>0)).length>0)
+  );
 
-  // Build unit options for selected stock
-  let unitOpts='';
-  let selUnit=wasteUnit;
-  if(selSmry){
-    const rawBatch=stk.find(b=>b.name.toLowerCase()===selSmry.name.toLowerCase());
-    const batchWithWAC={...rawBatch,cost:selSmry.cost};
-    const ku=getFullUnitsForCustomize(batchWithWAC,key);
-    if(!selUnit)selUnit=ku[0]?.unit||selSmry.stockUnit;
-    unitOpts=ku.map(u=>`<option value="${u.unit}"${u.unit===selUnit?' selected':''}>${u.unit} · ${p(u.costPerUnit)}/${u.unit}</option>`).join('');
+  // === TAB BUTTONS ===
+  const tabHtml=`<div style="display:flex;gap:6px;margin-bottom:10px">
+    <button onclick="renderWasteModal('${key}','stock',null,0,null,null)"
+      style="flex:1;padding:7px;border-radius:var(--radius-sm);border:1.5px solid ${type==='stock'?'var(--accent)':'var(--border-primary)'};background:${type==='stock'?'var(--accent-light)':'var(--bg-secondary)'};color:${type==='stock'?'var(--accent)':'var(--text-secondary)'};font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">
+      📦 Stock Items
+    </button>
+    ${recipedProds.length>0?`<button onclick="renderWasteModal('${key}','product',null,0,null,null)"
+      style="flex:1;padding:7px;border-radius:var(--radius-sm);border:1.5px solid ${type==='product'?'var(--accent)':'var(--border-primary)'};background:${type==='product'?'var(--accent-light)':'var(--bg-secondary)'};color:${type==='product'?'var(--accent)':'var(--text-secondary)'};font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">
+      🛒 Products
+    </button>`:''}
+  </div>`;
+
+  // === STOCK SECTION ===
+  let listHtml='';
+  let detailHtml='<div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding:8px 0">← Select an item above</div>';
+  let canRecord=false;
+  let recordOnclick='';
+
+  if(type==='stock'){
+    // Stock item rows
+    listHtml=uniqueStk.map(s=>{
+      const rawBatch=stk.find(b=>b.name.toLowerCase()===s.name.toLowerCase());
+      const batchWithWAC={...rawBatch,cost:s.cost};
+      const ku=getFullUnitsForCustomize(batchWithWAC,key);
+      const primaryUnit=ku[0];
+      const specAmt=s.specAmt||0;const specBase=s.specBaseUnit||'';
+      const availDisplay=specAmt>0&&specBase
+        ?`${Math.round(s.qty*specAmt*1000)/1000} ${specBase} (${s.qty} ${s.stockUnit})`
+        :`${Math.floor(s.qty)} ${s.stockUnit}`;
+      const costDisplay=primaryUnit?`· ${p(primaryUnit.costPerUnit)}/${primaryUnit.unit}`:'';
+      const isSelected=type==='stock'&&s.name===selectedId;
+      const isOut=s.totalBase<=0;
+      return`<div class="cr" style="cursor:pointer;${isSelected?'background:var(--accent-light);border-radius:6px;':''}${isOut?'opacity:0.5;':''}"
+        onclick="renderWasteModal('${key}','stock','${s.name.replace(/'/g,"\'")}',0,null,null)">
+        <div style="flex:1;min-width:0">
+          <div class="crn" style="font-weight:600">${s.name}${isOut?'<span style="font-size:9px;color:var(--danger);margin-left:6px">OUT</span>':''}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">
+            <span style="color:var(--accent);font-weight:600">${availDisplay} available</span> ${costDisplay}
+          </div>
+        </div>
+        ${isSelected?'<span style="color:var(--accent);font-size:14px;flex-shrink:0">✓</span>':''}
+      </div>`;
+    }).join('');
+
+    // Stock detail section
+    if(selectedId){
+      const selSmry=uniqueStk.find(s=>s.name===selectedId);
+      if(selSmry){
+        const rawBatch=stk.find(b=>b.name.toLowerCase()===selSmry.name.toLowerCase());
+        const batchWithWAC={...rawBatch,cost:selSmry.cost};
+        const ku=getFullUnitsForCustomize(batchWithWAC,key);
+        let selUnit=wasteUnit||ku[0]?.unit||selSmry.stockUnit;
+        const unitOpts=ku.map(u=>`<option value="${u.unit}"${u.unit===selUnit?' selected':''}>${u.unit} · ${p(u.costPerUnit)}/${u.unit}</option>`).join('');
+        const kuEntry=ku.find(u=>u.unit===selUnit)||ku[0];
+        const costLost=wasteQty*(kuEntry?.costPerUnit||0);
+        const preview=wasteQty>0?`<div style="margin-top:8px;background:var(--danger-light);border:0.5px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px">
+          <div style="font-size:10px;font-weight:700;color:var(--danger);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">📉 Will deduct:</div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid var(--border-secondary)">
+            <span style="font-weight:600;color:var(--text-secondary)">${selSmry.name}</span>
+            <span style="font-weight:700;color:var(--danger)">−${wasteQty} ${selUnit}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px">
+            <span style="color:var(--text-tertiary)">Est. value lost</span>
+            <span style="font-weight:700;color:var(--danger)">${p(costLost)}</span>
+          </div>
+        </div>`:'';
+        detailHtml=`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:8px">${selSmry.name}</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:11px;color:var(--text-secondary);flex:1">Unit:</div>
+            <select class="inp" style="margin-bottom:0;font-size:11px;flex:1"
+              onchange="renderWasteModal('${key}','stock','${selectedId.replace(/'/g,"\'")}',${wasteQty},this.value,null)">${unitOpts}</select>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="font-size:11px;color:var(--text-secondary);flex:1">Qty wasted:</div>
+            <div class="qw">
+              <button class="qb" onclick="renderWasteModal('${key}','stock','${selectedId.replace(/'/g,"\'")}',Math.max(0,${wasteQty}-1),'${selUnit}',null)">−</button>
+              <input class="qni" type="number" min="0" step="0.001" value="${wasteQty||''}" placeholder="0"
+                onchange="renderWasteModal('${key}','stock','${selectedId.replace(/'/g,"\'")}',parseFloat(this.value)||0,'${selUnit}',null)" style="width:54px">
+              <button class="qb" onclick="renderWasteModal('${key}','stock','${selectedId.replace(/'/g,"\'")}',${wasteQty}+1,'${selUnit}',null)">+</button>
+            </div>
+          </div>
+          ${preview}
+        </div>`;
+        canRecord=wasteQty>0;
+        recordOnclick=`recordWaste('${key}','stock','${selectedId.replace(/'/g,"\'")}',${wasteQty},'${selUnit}',null)`;
+      }
+    }
   }
 
-  // Stock item rows — clean, detailed, deduplicated
-  const stockRows=uniqueStk.map(s=>{
-    const rawBatch=stk.find(b=>b.name.toLowerCase()===s.name.toLowerCase());
-    const batchWithWAC={...rawBatch,cost:s.cost};
-    const ku=getFullUnitsForCustomize(batchWithWAC,key);
-    const primaryUnit=ku[0];
-    const specAmt=s.specAmt||0;
-    const specBase=s.specBaseUnit||'';
-    const availDisplay=specAmt>0&&specBase
-      ?`${Math.round(s.qty*specAmt*1000)/1000} ${specBase} (${s.qty} ${s.stockUnit})`
-      :`${Math.floor(s.qty)} ${s.stockUnit}`;
-    const costDisplay=primaryUnit?`${p(primaryUnit.costPerUnit)}/${primaryUnit.unit}`:'';
-    const isSelected=s.name===selectedStockName;
-    const isOut=s.totalBase<=0;
-    return`<div class="cr" style="cursor:pointer;${isSelected?'background:var(--accent-light);border-radius:6px;':''}${isOut?'opacity:0.5;':''}"
-      onclick="renderWasteModal('${key}','${s.name.replace(/'/g,"\'")}',0,null)">
-      <div style="flex:1;min-width:0">
-        <div class="crn" style="font-weight:600">${s.name}${isOut?'<span style="font-size:9px;color:var(--danger);margin-left:6px;font-weight:700">OUT OF STOCK</span>':''}</div>
-        <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">
-          <span style="color:var(--accent);font-weight:600">${availDisplay} available</span>
-          ${costDisplay?`· ${costDisplay}`:''}
+  // === PRODUCT SECTION ===
+  if(type==='product'){
+    listHtml=recipedProds.map(pr=>{
+      const isSelected=type==='product'&&String(pr.id)===String(selectedId);
+      const hasVariants=pr.variants&&pr.variants.filter(v=>v.name).length>0;
+      const variantCount=hasVariants?pr.variants.filter(v=>v.name).length:0;
+      const hint=hasVariants
+        ?`${variantCount} variant${variantCount!==1?'s':''} — pick one below`
+        :`${pr.recipe.length} ingredient${pr.recipe.length!==1?'s':''} · auto-deduct`;
+      return`<div class="cr" style="cursor:pointer;${isSelected?'background:var(--accent-light);border-radius:6px;':''}"
+        onclick="renderWasteModal('${key}','product',${pr.id},0,null,null)">
+        <div style="flex:1;min-width:0">
+          <div class="crn" style="font-weight:600">${pr.name}</div>
+          <div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">${hint}</div>
         </div>
-      </div>
-      ${isSelected?'<span style="color:var(--accent);font-size:14px;flex-shrink:0">✓</span>':''}
-    </div>`;
-  }).join('');
+        ${isSelected?'<span style="color:var(--accent);font-size:14px;flex-shrink:0">✓</span>':''}
+      </div>`;
+    }).join('');
 
-  // Deduction preview
-  let preview='';
-  if(selSmry&&wasteQty>0&&selUnit){
-    const rawBatch=stk.find(b=>b.name.toLowerCase()===selSmry.name.toLowerCase());
-    const batchWithWAC={...rawBatch,cost:selSmry.cost};
-    const ku=getFullUnitsForCustomize(batchWithWAC,key);
-    const kuEntry=ku.find(u=>u.unit===selUnit)||ku[0];
-    const costLost=wasteQty*(kuEntry?.costPerUnit||0);
-    preview=`<div style="margin-top:8px;background:var(--danger-light);border:0.5px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px">
-      <div style="font-size:10px;font-weight:700;color:var(--danger);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">📉 Will deduct from inventory:</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;border-bottom:0.5px solid var(--border-secondary)">
-        <span style="color:var(--text-secondary);font-weight:600">${selSmry.name}</span>
-        <span style="color:var(--danger);font-weight:700">−${wasteQty} ${selUnit}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11px">
-        <span style="color:var(--text-tertiary)">Estimated value lost</span>
-        <span style="color:var(--danger);font-weight:700">${p(costLost)}</span>
-      </div>
-    </div>`;
+    // Product detail section
+    if(selectedId){
+      const selProd=recipedProds.find(p=>String(p.id)===String(selectedId));
+      if(selProd){
+        const hasVariants=selProd.variants&&selProd.variants.filter(v=>v.name).length>0;
+        const activeVariants=hasVariants?selProd.variants.filter(v=>v.name&&v.recipe&&v.recipe.length>0):[];
+
+        // Determine the recipe to use
+        let recipe=selProd.recipe||[];
+        let variantLabel='';
+        if(activeVariants.length>0){
+          const selVariant=selectedVariantId?activeVariants.find(v=>v.id===selectedVariantId):null;
+          recipe=selVariant?selVariant.recipe:[];
+          variantLabel=selVariant?selVariant.name:'';
+
+          // Variant picker
+          const variantPicker=`<div style="margin-bottom:8px">
+            <div style="font-size:10px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pick Variant:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${activeVariants.map(v=>`<button onclick="renderWasteModal('${key}','product',${selProd.id},${wasteQty},null,'${v.id}')"
+                style="padding:5px 10px;border-radius:20px;border:1.5px solid ${v.id===selectedVariantId?'var(--accent)':'var(--border-primary)'};background:${v.id===selectedVariantId?'var(--accent-light)':'var(--bg-secondary)'};color:${v.id===selectedVariantId?'var(--accent)':'var(--text-secondary)'};font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">
+                ${v.name}
+              </button>`).join('')}
+            </div>
+          </div>`;
+
+          // Preview of deduction
+          let previewLines='';let totalCostLost=0;
+          if(selVariant&&wasteQty>0){
+            previewLines=recipe.map(ing=>{
+              const item=stk.find(s=>s.id===ing.stockId)||stk.find(s=>s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+              if(!item)return'';
+              const smry=getStockSummary(key,item.name)||item;
+              const ku=getItemUnits({...item,cost:smry.cost});
+              const ke=ku.find(u=>u.unit===ing.useUnit)||ku[0];
+              const totalDeduct=ing.qty*wasteQty;
+              const costDeduct=ke?totalDeduct*(ke.costPerUnit||0):0;
+              totalCostLost+=costDeduct;
+              return`<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:0.5px solid var(--border-secondary)">
+                <span style="color:var(--text-secondary)">${ing.stockName||item.name}</span>
+                <span style="color:var(--danger);font-weight:600">−${totalDeduct} ${ing.useUnit} <span style="color:var(--text-tertiary);font-weight:400">(~${p(costDeduct)})</span></span>
+              </div>`;
+            }).join('');
+          }
+          const preview=selVariant&&wasteQty>0?`<div style="margin-top:8px;background:var(--danger-light);border:0.5px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;color:var(--danger);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">📉 Will deduct:</div>
+            ${previewLines}
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px">
+              <span style="color:var(--text-tertiary)">Est. value lost</span>
+              <span style="font-weight:700;color:var(--danger)">${p(totalCostLost)}</span>
+            </div>
+          </div>`:'';
+
+          detailHtml=`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:8px">${selProd.name}</div>
+            ${variantPicker}
+            ${selVariant?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="font-size:11px;color:var(--text-secondary);flex:1">Qty wasted:</div>
+              <div class="qw">
+                <button class="qb" onclick="renderWasteModal('${key}','product',${selProd.id},Math.max(0,${wasteQty}-1),null,'${selectedVariantId||''}')">−</button>
+                <input class="qni" type="number" min="0" value="${wasteQty||''}" placeholder="0"
+                  onchange="renderWasteModal('${key}','product',${selProd.id},parseInt(this.value)||0,null,'${selectedVariantId||''}')" style="width:54px">
+                <button class="qb" onclick="renderWasteModal('${key}','product',${selProd.id},${wasteQty}+1,null,'${selectedVariantId||''}')">+</button>
+              </div>
+            </div>${preview}`:''}
+          </div>`;
+          canRecord=!!selVariant&&wasteQty>0;
+          recordOnclick=`recordWaste('${key}','product',${selProd.id},${wasteQty},null,'${selectedVariantId||''}')`;
+
+        } else {
+          // Plain recipe product — no variants
+          let previewLines='';let totalCostLost=0;
+          if(wasteQty>0){
+            previewLines=recipe.map(ing=>{
+              const item=stk.find(s=>s.id===ing.stockId)||stk.find(s=>s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+              if(!item)return'';
+              const smry=getStockSummary(key,item.name)||item;
+              const ku=getItemUnits({...item,cost:smry.cost});
+              const ke=ku.find(u=>u.unit===ing.useUnit)||ku[0];
+              const totalDeduct=ing.qty*wasteQty;
+              const costDeduct=ke?totalDeduct*(ke.costPerUnit||0):0;
+              totalCostLost+=costDeduct;
+              return`<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:0.5px solid var(--border-secondary)">
+                <span style="color:var(--text-secondary)">${ing.stockName||item.name}</span>
+                <span style="color:var(--danger);font-weight:600">−${totalDeduct} ${ing.useUnit} <span style="color:var(--text-tertiary);font-weight:400">(~${p(costDeduct)})</span></span>
+              </div>`;
+            }).join('');
+          }
+          const preview=wasteQty>0?`<div style="margin-top:8px;background:var(--danger-light);border:0.5px solid var(--danger);border-radius:var(--radius-sm);padding:10px 12px">
+            <div style="font-size:10px;font-weight:700;color:var(--danger);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">📉 Will deduct:</div>
+            ${previewLines}
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px">
+              <span style="color:var(--text-tertiary)">Est. value lost</span>
+              <span style="font-weight:700;color:var(--danger)">${p(totalCostLost)}</span>
+            </div>
+          </div>`:'';
+          detailHtml=`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:8px">${selProd.name}</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="font-size:11px;color:var(--text-secondary);flex:1">Qty wasted:</div>
+              <div class="qw">
+                <button class="qb" onclick="renderWasteModal('${key}','product',${selProd.id},Math.max(0,${wasteQty}-1),null,null)">−</button>
+                <input class="qni" type="number" min="0" value="${wasteQty||''}" placeholder="0"
+                  onchange="renderWasteModal('${key}','product',${selProd.id},parseInt(this.value)||0,null,null)" style="width:54px">
+                <button class="qb" onclick="renderWasteModal('${key}','product',${selProd.id},${wasteQty}+1,null,null)">+</button>
+              </div>
+            </div>
+            ${preview}
+          </div>`;
+          canRecord=wasteQty>0;
+          recordOnclick=`recordWaste('${key}','product',${selProd.id},${wasteQty},null,null)`;
+        }
+      }
+    }
   }
 
   // Recent waste log
   const logHtml=logs.length?`<div style="margin-top:10px">
     <div style="font-size:10px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Recent Waste Log</div>
     ${logs.map(l=>`<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-tertiary);padding:3px 0;border-bottom:0.5px solid var(--border-secondary)">
-      <span>${l.prodName}${l.wasteUnit?' ×'+l.qty+' '+l.wasteUnit:' ×'+l.qty} 📉</span>
+      <span>${l.prodName}${l.variantName?' ('+l.variantName+')':''}${l.wasteUnit?' ×'+l.qty+' '+l.wasteUnit:' ×'+l.qty} 📉</span>
       <span>${l.time}</span>
     </div>`).join('')}
   </div>`:'';
 
-  const canRecord=selSmry&&wasteQty>0&&selUnit;
-
   const html=`<div class="modal-t">🗑️ Record Waste / Error</div>
-    <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Select a stock item, choose the unit, and enter the quantity wasted or damaged.</div>
-    <div style="font-size:10px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Select Stock Item</div>
-    <div class="cb" style="padding:4px 8px;max-height:160px;overflow-y:auto;margin-bottom:10px">${stockRows}</div>
-    ${selSmry?`<div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:8px">${selSmry.name}</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <div style="font-size:11px;color:var(--text-secondary);flex:1">Unit:</div>
-        <select class="inp" style="margin-bottom:0;font-size:11px;flex:1"
-          onchange="renderWasteModal('${key}','${selectedStockName?.replace(/'/g,"\'")||''}',${wasteQty},this.value)">${unitOpts}</select>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="font-size:11px;color:var(--text-secondary);flex:1">Quantity wasted:</div>
-        <div class="qw">
-          <button class="qb" onclick="renderWasteModal('${key}','${selectedStockName?.replace(/'/g,"\'")||''}',Math.max(0,${wasteQty}-1),'${selUnit||''}')">−</button>
-          <input class="qni" type="number" min="0" step="0.001" value="${wasteQty||''}" placeholder="0"
-            onchange="renderWasteModal('${key}','${selectedStockName?.replace(/'/g,"\'")||''}',parseFloat(this.value)||0,'${selUnit||''}')" style="width:54px">
-          <button class="qb" onclick="renderWasteModal('${key}','${selectedStockName?.replace(/'/g,"\'")||''}',${wasteQty}+1,'${selUnit||''}')">+</button>
-        </div>
-      </div>
-    </div>${preview}`:'<div style="font-size:11px;color:var(--text-tertiary);text-align:center;padding:8px 0">← Select a stock item above</div>'}
+    <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:10px;line-height:1.5">Select a stock item or product. Ingredients will be auto-deducted from inventory.</div>
+    ${tabHtml}
+    <div class="cb" style="padding:4px 8px;max-height:150px;overflow-y:auto;margin-bottom:10px">${listHtml}</div>
+    ${detailHtml}
     ${logHtml}
     <div class="mbtnrow" style="margin-top:10px">
       <button class="btn-c" onclick="rmModal()">Cancel</button>
-      <button class="btn-s" style="background:var(--danger)" ${!canRecord?'disabled':''} onclick="recordWaste('${key}','${selectedStockName?.replace(/'/g,"\'")||''}',${wasteQty},'${selUnit||''}')">🗑️ Record Waste</button>
+      <button class="btn-s" style="background:var(--danger)" ${!canRecord?'disabled':''} onclick="${recordOnclick}">🗑️ Record Waste</button>
     </div>`;
 
   const existingModal=document.getElementById('_modal');
@@ -4826,36 +4984,63 @@ function renderWasteModal(key,selectedStockName,wasteQty,wasteUnit){
   else{modal(html);}
 }
 
-function recordWaste(key,stockName,qty,wasteUnit){
-  if(!qty||qty<=0||!stockName)return;
+function recordWaste(key,type,selectedId,qty,wasteUnit,selectedVariantId){
+  if(!qty||qty<=0)return;
   initBizData(key);
   const stk=BIZ_STOCKS[key]||[];
-  const smry=getStockSummary(key,stockName);
-  if(!smry)return;
-  // Convert wasteQty to base units and deduct via FIFO
-  const rawBatch=stk.find(b=>b.name.toLowerCase()===stockName.toLowerCase());
-  const batchWithWAC={...rawBatch,cost:smry.cost};
-  const ku=getFullUnitsForCustomize(batchWithWAC,key);
-  const kuEntry=ku.find(u=>u.unit===wasteUnit)||ku[0];
-  // Determine deduction in base units
-  const specAmt=smry.specAmt||0;
-  const specBase=(smry.specBaseUnit||'').toLowerCase();
-  const unitLow=(wasteUnit||'').toLowerCase();
-  let deductBase;
-  if(specAmt>0&&specBase&&unitLow===specBase){
-    deductBase=qty; // already in base units
-  } else if(specAmt>0){
-    deductBase=qty*specAmt; // stockUnit → base
-  } else {
-    deductBase=qty;
-  }
-  deductStockFIFO(key,stockName,deductBase,null);
-  // Log the waste
+  const prods=BIZ_PRODUCTS[key]||[];
   if(!BIZ_WASTELOGS[key])BIZ_WASTELOGS[key]=[];
-  const costLost=qty*(kuEntry?.costPerUnit||0);
-  BIZ_WASTELOGS[key].push({prodName:stockName,qty,wasteUnit,costLost,time:ts(),deducted:true});
+
+  if(type==='stock'){
+    // Direct stock deduction
+    const smry=getStockSummary(key,selectedId);
+    if(!smry)return;
+    const rawBatch=stk.find(b=>b.name.toLowerCase()===selectedId.toLowerCase());
+    const batchWithWAC={...rawBatch,cost:smry.cost};
+    const ku=getFullUnitsForCustomize(batchWithWAC,key);
+    const kuEntry=ku.find(u=>u.unit===wasteUnit)||ku[0];
+    const specAmt=smry.specAmt||0;
+    const specBase=(smry.specBaseUnit||'').toLowerCase();
+    const unitLow=(wasteUnit||'').toLowerCase();
+    let deductBase;
+    if(specAmt>0&&specBase&&unitLow===specBase){deductBase=qty;}
+    else if(specAmt>0){deductBase=qty*specAmt;}
+    else{deductBase=qty;}
+    deductStockFIFO(key,selectedId,deductBase,null);
+    const costLost=qty*(kuEntry?.costPerUnit||0);
+    BIZ_WASTELOGS[key].push({prodName:selectedId,qty,wasteUnit,costLost,time:ts(),deducted:true});
+    setTimeout(()=>toast(`Waste recorded — ${selectedId} ×${qty} ${wasteUnit} · inventory deducted ✓`,'err'),50);
+
+  } else if(type==='product'){
+    // Recipe/variant deduction
+    const prod=prods.find(p=>String(p.id)===String(selectedId));
+    if(!prod)return;
+    const hasVariants=prod.variants&&prod.variants.filter(v=>v.name).length>0;
+    let recipe=prod.recipe||[];
+    let variantName='';
+    if(hasVariants&&selectedVariantId){
+      const variant=prod.variants.find(v=>v.id===selectedVariantId);
+      recipe=variant?.recipe||[];
+      variantName=variant?.name||'';
+    }
+    if(!recipe.length)return;
+    deductRecipe(key,recipe,qty);
+    // Calculate cost lost
+    let costLost=0;
+    recipe.forEach(ing=>{
+      const item=stk.find(s=>s.id===ing.stockId)||stk.find(s=>s.name.toLowerCase()===(ing.stockName||'').toLowerCase());
+      if(!item)return;
+      const smry=getStockSummary(key,item.name)||item;
+      const ku=getItemUnits({...item,cost:smry.cost});
+      const ke=ku.find(u=>u.unit===ing.useUnit)||ku[0];
+      costLost+=ing.qty*qty*(ke?.costPerUnit||0);
+    });
+    const logName=variantName?`${prod.name} (${variantName})`:prod.name;
+    BIZ_WASTELOGS[key].push({prodName:prod.name,variantName,qty,costLost,time:ts(),deducted:true});
+    setTimeout(()=>toast(`Waste recorded — ${logName} ×${qty} · ingredients deducted ✓`,'err'),50);
+  }
+
   rmModal();saveData();render();
-  setTimeout(()=>toast(`Waste recorded — ${stockName} ×${qty} ${wasteUnit} · inventory deducted ✓`,'err'),50);
 }
 
 function openAddProduct(key){
