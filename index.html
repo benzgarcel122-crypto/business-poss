@@ -3179,10 +3179,6 @@ function doRemoveCredit(key,id){
 function buildSettingsContent(key){
   const info=BIZ_CUSTOM_INFO[key]||{};
   const biz=getBizInfo(key);
-  const hasGeminiKey=!!localStorage.getItem('gemini_api_key');
-  const geminiKeyDisplay=hasGeminiKey?'••••••••••••••••••••••••••':'';
-  const geminiStatusColor=hasGeminiKey?'var(--success)':'var(--text-tertiary)';
-  const geminiStatusText=hasGeminiKey?'✓ API key saved — receipt scanning is active':'No key saved — receipt scanning will not work';
   const email=currentUser?.email||'—';
   const bizOpen=window._settingsBizOpen&&window._settingsBizOpen[key];
   const manageBizOpen=window._settingsManageBizOpen&&window._settingsManageBizOpen[key];
@@ -3248,23 +3244,6 @@ function buildSettingsContent(key){
     </div>
 
 
-    <!-- API KEY -->
-    <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🔑 Receipt Scan API</div>
-      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px">
-        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px;line-height:1.5">Used for scanning receipts in the Stock tab. Get a free key at <strong>aistudio.google.com</strong> → Get API Key. Your key is stored on this device only — never sent anywhere except Google.</div>
-        <div style="position:relative;margin-bottom:8px">
-          <input class="inp" id="gemini-key-input" type="password" placeholder="Paste your Gemini API key here (AIzaSy...)" style="width:100%;padding-right:40px;box-sizing:border-box" value="${geminiKeyDisplay}">
-          <button onclick="const el=document.getElementById('gemini-key-input');el.type=el.type==='password'?'text':'password'" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-tertiary)">👁</button>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn-s" style="flex:2" onclick="saveGeminiKey()">💾 Save Key</button>
-          <button class="btn-c" style="flex:1" onclick="removeGeminiKey()">Remove</button>
-        </div>
-        <div id="gemini-key-status" style="font-size:10px;margin-top:6px;color:${geminiStatusColor}">${geminiStatusText}</div>
-      </div>
-    </div>
-
     <!-- DANGER ZONE -->
     <div style="margin-bottom:18px">
       <div style="font-size:11px;font-weight:700;color:var(--danger);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">⚠️ Danger Zone</div>
@@ -3273,27 +3252,6 @@ function buildSettingsContent(key){
 
   </div>`;
 }
-
-function saveGeminiKey(){
-  const val=document.getElementById('gemini-key-input')?.value.trim();
-  if(!val||val.startsWith('•')){toast('Paste your actual API key first','err');return;}
-  if(!val.startsWith('AIza')){toast('That doesn\'t look like a valid Gemini key (should start with AIza...)','err');return;}
-  localStorage.setItem('gemini_api_key',val);
-  const el=document.getElementById('gemini-key-input');
-  if(el){el.value='••••••••••••••••••••••••••';el.type='password';}
-  const status=document.getElementById('gemini-key-status');
-  if(status){status.textContent='✓ API key saved — receipt scanning is active';status.style.color='var(--success)';}
-  toast('API key saved ✓');
-}
-function removeGeminiKey(){
-  localStorage.removeItem('gemini_api_key');
-  const el=document.getElementById('gemini-key-input');
-  if(el){el.value='';el.type='password';}
-  const status=document.getElementById('gemini-key-status');
-  if(status){status.textContent='No key saved — receipt scanning will not work';status.style.color='var(--text-tertiary)';}
-  toast('API key removed');
-}
-function getGeminiKey(){return localStorage.getItem('gemini_api_key')||'';}
 
 function saveBusinessInfo(key){
   const name=document.getElementById('si-name-'+key)?.value.trim()||'';
@@ -6107,31 +6065,17 @@ async function processScanImage(dataUrl,ctx){
 
   // Stock path
   const key=ctx.replace('stock-','');
-  const apiKey=getGeminiKey();
-  if(!apiKey){
-    clearInterval(iv);lb.style.display='none';
-    toast('No API key set — go to Settings → Receipt Scan API to add your Gemini key','err');
-    return;
-  }
   const existingNames=(BIZ_STOCKS[key]||[]).map(s=>s.name.toLowerCase());
-  const prompt=`You are a stock inventory assistant. Extract all stock items from this receipt or stock list image. For each item return: name (string), qty (number), unit (string like pc/ream/box/bottle/sack/kg/g/L/ml), cost (total price paid for that line item as a number, 0 if not visible). Return ONLY a valid JSON array, no extra text: [{"name":"item name","qty":1,"unit":"pc","cost":0}]`;
   try{
-    const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{
+    const resp=await fetch('/api/scan',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        contents:[{parts:[
-          {inline_data:{mime_type:'image/jpeg',data:base64}},
-          {text:prompt}
-        ]}],
-        generationConfig:{temperature:0,maxOutputTokens:1500}
-      })
+      body:JSON.stringify({imageBase64:base64,mimeType:'image/jpeg'})
     });
     const data=await resp.json();
     clearInterval(iv);lbi.style.width='100%';setTimeout(()=>{lb.style.display='none';lbi.style.width='0';},400);
-    if(data.error){toast('API error: '+data.error.message,'err');return;}
-    const raw=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-    const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
+    if(data.error){toast('Scan error: '+data.error,'err');return;}
+    const parsed=data.items||[];
     if(!parsed.length){toast('No items found. Try a clearer photo.','err');return;}
     receiptScanItems=parsed.map(it=>({
       name:it.name||'',qty:it.qty||1,unit:it.unit||'pc',cost:it.cost||0,
@@ -6140,7 +6084,7 @@ async function processScanImage(dataUrl,ctx){
     receiptScanKey=key;receiptScanIdx=0;
     renderReceiptPreview(key,ctx);
     toast('Scan complete — review items below ✓','ok');
-  }catch(e){clearInterval(iv);lb.style.display='none';toast('Could not read image. Try a clearer photo.','err');}
+  }catch(e){clearInterval(iv);lb.style.display='none';toast('Could not process image. Try again.','err');}
 }
 
 function renderReceiptPreview(key,ctx){
