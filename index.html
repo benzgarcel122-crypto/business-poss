@@ -3179,6 +3179,10 @@ function doRemoveCredit(key,id){
 function buildSettingsContent(key){
   const info=BIZ_CUSTOM_INFO[key]||{};
   const biz=getBizInfo(key);
+  const hasGeminiKey=!!localStorage.getItem('gemini_api_key');
+  const geminiKeyDisplay=hasGeminiKey?'••••••••••••••••••••••••••':'';
+  const geminiStatusColor=hasGeminiKey?'var(--success)':'var(--text-tertiary)';
+  const geminiStatusText=hasGeminiKey?'✓ API key saved — receipt scanning is active':'No key saved — receipt scanning will not work';
   const email=currentUser?.email||'—';
   const bizOpen=window._settingsBizOpen&&window._settingsBizOpen[key];
   const manageBizOpen=window._settingsManageBizOpen&&window._settingsManageBizOpen[key];
@@ -3250,14 +3254,14 @@ function buildSettingsContent(key){
       <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px">
         <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px;line-height:1.5">Used for scanning receipts in the Stock tab. Get a free key at <strong>aistudio.google.com</strong> → Get API Key. Your key is stored on this device only — never sent anywhere except Google.</div>
         <div style="position:relative;margin-bottom:8px">
-          <input class="inp" id="gemini-key-input" type="password" placeholder="Paste your Gemini API key here (AIzaSy...)" style="width:100%;padding-right:40px;box-sizing:border-box" value="${localStorage.getItem('gemini_api_key')?'••••••••••••••••••••••••••':''}">
+          <input class="inp" id="gemini-key-input" type="password" placeholder="Paste your Gemini API key here (AIzaSy...)" style="width:100%;padding-right:40px;box-sizing:border-box" value="${geminiKeyDisplay}">
           <button onclick="const el=document.getElementById('gemini-key-input');el.type=el.type==='password'?'text':'password'" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-tertiary)">👁</button>
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn-s" style="flex:2" onclick="saveGeminiKey()">💾 Save Key</button>
           <button class="btn-c" style="flex:1" onclick="removeGeminiKey()">Remove</button>
         </div>
-        <div id="gemini-key-status" style="font-size:10px;margin-top:6px;color:${localStorage.getItem('gemini_api_key')?'var(--success)':'var(--text-tertiary)'}">${localStorage.getItem('gemini_api_key')?'✓ API key saved — receipt scanning is active':'No key saved — receipt scanning will not work'}</div>
+        <div id="gemini-key-status" style="font-size:10px;margin-top:6px;color:${geminiStatusColor}">${geminiStatusText}</div>
       </div>
     </div>
 
@@ -3290,6 +3294,8 @@ function removeGeminiKey(){
   toast('API key removed');
 }
 function getGeminiKey(){return localStorage.getItem('gemini_api_key')||'';}
+
+function saveBusinessInfo(key){
   const name=document.getElementById('si-name-'+key)?.value.trim()||'';
   const address=document.getElementById('si-address-'+key)?.value.trim()||'';
   const contact=document.getElementById('si-contact-'+key)?.value.trim()||'';
