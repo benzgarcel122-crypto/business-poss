@@ -1585,7 +1585,7 @@ function buildStock(key){
   <div class="wn">Same item name = instant restock · New name = new item</div>
 </div>
 <div class="sl">📷 Scan Receipt or Stock List</div>
-<div class="cb"><div class="scan-row"><button class="scan-btn" onclick="openCamera('stock-${key}')">📷 Camera</button><button class="scan-btn" onclick="openFile('stock-${key}')">🖼️ Upload Image</button></div><div class="loading-bar" id="lb-stock-${key}"><div class="loading-bar-inner" id="lbi-stock-${key}"></div></div><div class="scan-result" id="sr-stock-${key}"><div class="scan-r-title">✏️ Review — edit if needed</div><div id="si-stock-${key}"></div><button class="bm" onclick="applyScanned('stock-${key}')">✓ Add All to Stock</button></div></div>
+<div class="cb"><div class="scan-row"><button class="scan-btn" onclick="openCamera('stock-${key}')">📷 Camera</button><button class="scan-btn" onclick="openFile('stock-${key}')">🖼️ Upload Image</button></div><div style="background:#fff8e1;border:0.5px solid #f5c842;border-radius:var(--radius-sm);padding:8px 10px;margin-bottom:8px;font-size:10px;color:#7a5c00;line-height:1.5"><strong>📋 For best results:</strong> Use a flat, well-lit receipt with clear printed text. Avoid blurry, crumpled, or handwritten receipts — results may be inaccurate. Always review items before confirming. If the receipt is too messy, just type it manually in the form above.</div><div class="loading-bar" id="lb-stock-${key}"><div class="loading-bar-inner" id="lbi-stock-${key}"></div></div><div class="scan-result" id="sr-stock-${key}"><div class="scan-r-title">✏️ Review — edit if needed</div><div id="si-stock-${key}"></div><button class="bm" onclick="applyScanned('stock-${key}')">✓ Add All to Stock</button></div></div>
 <div class="sl">Current Stock (${stk.length} items)</div>
 <div style="border:0.5px solid var(--border-secondary);border-radius:var(--radius);background:var(--bg-primary);height:380px;overflow-y:scroll;padding:8px 10px;margin-bottom:10px">${stockRows}</div>
 </div>`;
@@ -3244,6 +3244,23 @@ function buildSettingsContent(key){
     </div>
 
 
+    <!-- API KEY -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text-tertiary);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">🔑 Receipt Scan API</div>
+      <div style="background:var(--bg-secondary);border-radius:var(--radius);padding:12px 14px">
+        <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px;line-height:1.5">Used for scanning receipts in the Stock tab. Get a free key at <strong>aistudio.google.com</strong> → Get API Key. Your key is stored on this device only — never sent anywhere except Google.</div>
+        <div style="position:relative;margin-bottom:8px">
+          <input class="inp" id="gemini-key-input" type="password" placeholder="Paste your Gemini API key here (AIzaSy...)" style="width:100%;padding-right:40px;box-sizing:border-box" value="${localStorage.getItem('gemini_api_key')?'••••••••••••••••••••••••••':''}">
+          <button onclick="const el=document.getElementById('gemini-key-input');el.type=el.type==='password'?'text':'password'" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-tertiary)">👁</button>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn-s" style="flex:2" onclick="saveGeminiKey()">💾 Save Key</button>
+          <button class="btn-c" style="flex:1" onclick="removeGeminiKey()">Remove</button>
+        </div>
+        <div id="gemini-key-status" style="font-size:10px;margin-top:6px;color:${localStorage.getItem('gemini_api_key')?'var(--success)':'var(--text-tertiary)'}">${localStorage.getItem('gemini_api_key')?'✓ API key saved — receipt scanning is active':'No key saved — receipt scanning will not work'}</div>
+      </div>
+    </div>
+
     <!-- DANGER ZONE -->
     <div style="margin-bottom:18px">
       <div style="font-size:11px;font-weight:700;color:var(--danger);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px">⚠️ Danger Zone</div>
@@ -3253,7 +3270,26 @@ function buildSettingsContent(key){
   </div>`;
 }
 
-function saveBusinessInfo(key){
+function saveGeminiKey(){
+  const val=document.getElementById('gemini-key-input')?.value.trim();
+  if(!val||val.startsWith('•')){toast('Paste your actual API key first','err');return;}
+  if(!val.startsWith('AIza')){toast('That doesn\'t look like a valid Gemini key (should start with AIza...)','err');return;}
+  localStorage.setItem('gemini_api_key',val);
+  const el=document.getElementById('gemini-key-input');
+  if(el){el.value='••••••••••••••••••••••••••';el.type='password';}
+  const status=document.getElementById('gemini-key-status');
+  if(status){status.textContent='✓ API key saved — receipt scanning is active';status.style.color='var(--success)';}
+  toast('API key saved ✓');
+}
+function removeGeminiKey(){
+  localStorage.removeItem('gemini_api_key');
+  const el=document.getElementById('gemini-key-input');
+  if(el){el.value='';el.type='password';}
+  const status=document.getElementById('gemini-key-status');
+  if(status){status.textContent='No key saved — receipt scanning will not work';status.style.color='var(--text-tertiary)';}
+  toast('API key removed');
+}
+function getGeminiKey(){return localStorage.getItem('gemini_api_key')||'';}
   const name=document.getElementById('si-name-'+key)?.value.trim()||'';
   const address=document.getElementById('si-address-'+key)?.value.trim()||'';
   const contact=document.getElementById('si-contact-'+key)?.value.trim()||'';
@@ -5830,6 +5866,7 @@ function doAddStock(key){
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
     saveData();render();
     setTimeout(()=>toast(`"${name}" restocked +${qty} ${stockUnit} · WAC ${wacLabel} ✓`),50);
+    if(receiptScanItems.length&&receiptScanIdx<receiptScanItems.length)setTimeout(()=>advanceReceiptFlow(key),300);
   } else {
     const sellSummary=activeSellRows.length?activeSellRows.map(r=>`${p(parseFloat(r.price))}/${r.unit}`).join(', '):'';
     modal(`<div class="modal-t">Confirm New Item</div>
@@ -5893,6 +5930,7 @@ function doAddStock_inner(key,name,qty,stockUnit,totalCost,low,lowUnit,specAmt,s
     BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost,costPerUnit:safeRound(newWAC),specAmt:specAmt||0,specBaseUnit:specBaseUnit||'',time:ts(),dateKey:dateKey()});
     saveData();render();
     setTimeout(()=>toast(`"${name}" restocked +${qty} ${stockUnit} · WAC ${wacLabel} ✓`),50);
+    if(receiptScanItems.length&&receiptScanIdx<receiptScanItems.length)setTimeout(()=>advanceReceiptFlow(key),300);
   }
 }
 
@@ -5920,6 +5958,7 @@ function saveNewItem(key,qty,stockUnit,cost,low,lowUnit,specAmt,specBaseUnit,sel
   const costLabel=specAmt>0?`${p(cost)}/${specBaseUnit}`:`${p(cost)}/${stockUnit}`;
   const sellLabel=rows.length?` · ${rows.length} price(s) added to Sell tab ✓`:'';
   setTimeout(()=>toast(`"${name}" added — ${qty} ${stockUnit} · ${costLabel}${sellLabel}`),50);
+  if(receiptScanItems.length&&receiptScanIdx<receiptScanItems.length)setTimeout(()=>advanceReceiptFlow(key),300);
 }
 function deleteExp(key,expId){
   const e=(BIZ_EXPLOGS[key]||[]).find(function(x){return String(x.id)===String(expId);});
@@ -6031,27 +6070,250 @@ function openCamera(ctx){scanCtx=ctx;if(navigator.mediaDevices&&navigator.mediaD
 function stopCam(){const v=document.getElementById('cam-vid');if(v&&v._stream)v._stream.getTracks().forEach(t=>t.stop());rmModal();}
 function snapPhoto(){const v=document.getElementById('cam-vid'),c=document.getElementById('cam-canvas'),img=document.getElementById('cam-preview'),btn=document.getElementById('snap-btn');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);const dataUrl=c.toDataURL('image/jpeg',0.85);v.style.display='none';img.src=dataUrl;img.style.display='block';btn.textContent='✓ Use Photo';btn.onclick=()=>{if(v._stream)v._stream.getTracks().forEach(t=>t.stop());rmModal();processScanImage(dataUrl,scanCtx);};}
 function openFile(ctx){scanCtx=ctx;const input=document.getElementById('file-cam-input');input.onchange=e=>{const file=e.target.files[0];if(!file)return;const r=new FileReader();r.onload=ev=>processScanImage(ev.target.result,ctx);r.readAsDataURL(file);input.value='';};input.click();}
+// ── Receipt Scan State ──────────────────────────────────────────────
+let receiptScanItems=[];
+let receiptScanKey='';
+let receiptScanIdx=0;
+
 async function processScanImage(dataUrl,ctx){
   const isExp=ctx.startsWith('exp-');
-  const lb=document.getElementById('lb-'+ctx),lbi=document.getElementById('lbi-'+ctx),sr=document.getElementById('sr-'+ctx),si=document.getElementById('si-'+ctx);
-  if(!lb||!sr||!si){toast('Reload and try again','err');return;}
+  const lb=document.getElementById('lb-'+ctx),lbi=document.getElementById('lbi-'+ctx),sr=document.getElementById('sr-'+ctx);
+  if(!lb||!sr){toast('Reload and try again','err');return;}
   lb.style.display='block';lbi.style.width='0';let prog=0;const iv=setInterval(()=>{prog=Math.min(prog+7,85);lbi.style.width=prog+'%';},200);
   const base64=dataUrl.split(',')[1];
-  const prompt=isExp?'Extract all expense items from this receipt. Return ONLY a JSON array: [{"name":"item","amount":0.00}]. No other text.':'Extract all items and quantities from this stock/inventory image. Return ONLY a JSON array: [{"name":"item","qty":1,"unit":"pcs"}]. No other text.';
+
+  if(isExp){
+    const si=document.getElementById('si-'+ctx);
+    if(!si){clearInterval(iv);lb.style.display='none';return;}
+    const prompt='Extract all expense items from this receipt. Return ONLY a JSON array: [{"name":"item","amount":0.00}]. No other text.';
+    try{
+      const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},{type:'text',text:prompt}]}]})});
+      const data=await resp.json();
+      clearInterval(iv);lbi.style.width='100%';setTimeout(()=>{lb.style.display='none';lbi.style.width='0';},400);
+      const raw=data.content?.map(c=>c.text||'').join('');
+      const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
+      sr.style.display='block';
+      si.innerHTML=parsed.map((it,i)=>`<div class="scan-edit-row"><input class="sei-name" id="sn-${i}" value="${it.name||''}"><input class="sei-qty" id="sq-${i}" type="number" value="${it.amount||0}" placeholder="₱"></div>`).join('');
+      toast('Scan complete — review below ✓','ok');
+    }catch(e){clearInterval(iv);lb.style.display='none';toast('Could not read image. Try a clearer photo.','err');}
+    return;
+  }
+
+  // Stock path
+  const key=ctx.replace('stock-','');
+  const apiKey=getGeminiKey();
+  if(!apiKey){
+    clearInterval(iv);lb.style.display='none';
+    toast('No API key set — go to Settings → Receipt Scan API to add your Gemini key','err');
+    return;
+  }
+  const existingNames=(BIZ_STOCKS[key]||[]).map(s=>s.name.toLowerCase());
+  const prompt=`You are a stock inventory assistant. Extract all stock items from this receipt or stock list image. For each item return: name (string), qty (number), unit (string like pc/ream/box/bottle/sack/kg/g/L/ml), cost (total price paid for that line item as a number, 0 if not visible). Return ONLY a valid JSON array, no extra text: [{"name":"item name","qty":1,"unit":"pc","cost":0}]`;
   try{
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:base64}},{type:'text',text:prompt}]}]})});
+    const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        contents:[{parts:[
+          {inline_data:{mime_type:'image/jpeg',data:base64}},
+          {text:prompt}
+        ]}],
+        generationConfig:{temperature:0,maxOutputTokens:1500}
+      })
+    });
     const data=await resp.json();
     clearInterval(iv);lbi.style.width='100%';setTimeout(()=>{lb.style.display='none';lbi.style.width='0';},400);
-    const raw=data.content?.map(c=>c.text||'').join('');
+    if(data.error){toast('API error: '+data.error.message,'err');return;}
+    const raw=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
     const parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());
-    sr.style.display='block';
-    si.innerHTML=parsed.map((it,i)=>`<div class="scan-edit-row"><input class="sei-name" id="sn-${i}" value="${it.name||''}"><input class="sei-qty" id="sq-${i}" type="number" value="${isExp?(it.amount||0):(it.qty||1)}" placeholder="${isExp?'₱':'Qty'}"></div>`).join('');
-    toast('Scan complete — review below ✓','ok');
+    if(!parsed.length){toast('No items found. Try a clearer photo.','err');return;}
+    receiptScanItems=parsed.map(it=>({
+      name:it.name||'',qty:it.qty||1,unit:it.unit||'pc',cost:it.cost||0,
+      isRestock:existingNames.includes((it.name||'').toLowerCase())
+    }));
+    receiptScanKey=key;receiptScanIdx=0;
+    renderReceiptPreview(key,ctx);
+    toast('Scan complete — review items below ✓','ok');
   }catch(e){clearInterval(iv);lb.style.display='none';toast('Could not read image. Try a clearer photo.','err');}
 }
+
+function renderReceiptPreview(key,ctx){
+  const sr=document.getElementById('sr-'+ctx);
+  if(!sr)return;
+  sr.style.display='block';
+  const rows=receiptScanItems.map((it,i)=>{
+    const tagHtml=it.isRestock
+      ?`<span style="background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;white-space:nowrap">RESTOCK</span>`
+      :`<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 6px;font-size:9px;font-weight:700;white-space:nowrap">NEW</span>`;
+    return`<div style="display:flex;align-items:flex-start;gap:6px;padding:7px 0;border-bottom:0.5px solid var(--border-secondary)">
+      <div style="width:16px;text-align:center;font-size:10px;color:var(--text-tertiary);font-weight:600;padding-top:5px">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <input id="rsp-name-${key}-${i}" style="width:100%;border:0.5px solid var(--border-secondary);border-radius:4px;padding:4px 7px;font-size:12px;font-weight:600;background:var(--bg-primary);color:var(--text-primary);font-family:inherit;box-sizing:border-box" value="${(it.name||'').replace(/"/g,'&quot;')}" placeholder="Item name">
+        <div style="display:flex;gap:5px;margin-top:4px;align-items:center">
+          ${tagHtml}
+          <input id="rsp-qty-${key}-${i}" type="number" style="width:60px;border:0.5px solid var(--border-secondary);border-radius:4px;padding:3px 6px;font-size:11px;background:var(--bg-primary);color:var(--text-primary);font-family:inherit" value="${it.qty}" placeholder="Qty">
+          <input id="rsp-unit-${key}-${i}" style="width:55px;border:0.5px solid var(--border-secondary);border-radius:4px;padding:3px 6px;font-size:11px;background:var(--bg-primary);color:var(--text-primary);font-family:inherit" value="${it.unit}" placeholder="unit">
+          <input id="rsp-cost-${key}-${i}" type="number" style="flex:1;min-width:0;border:0.5px solid var(--border-secondary);border-radius:4px;padding:3px 6px;font-size:11px;background:var(--bg-primary);color:var(--text-primary);font-family:inherit" value="${it.cost||''}" placeholder="₱ cost">
+        </div>
+      </div>
+      <button onclick="receiptScanItems.splice(${i},1);renderReceiptPreview('${key}','${ctx}')" style="background:none;border:none;color:var(--text-tertiary);font-size:14px;cursor:pointer;padding:2px 4px;margin-top:2px">✕</button>
+    </div>`;
+  }).join('');
+
+  sr.innerHTML=`
+    <div style="font-size:11px;font-weight:700;color:var(--text-primary);margin-bottom:6px">✏️ Review Scanned Items</div>
+    <div style="font-size:10px;color:var(--text-tertiary);margin-bottom:8px">Edit names, qty, unit or cost if needed before proceeding. <span style="color:var(--accent);font-weight:600">RESTOCK</span> = already in inventory.</div>
+    <div id="rsp-list-${key}" style="max-height:240px;overflow-y:auto;margin-bottom:10px">${rows}</div>
+    <div style="display:flex;gap:8px">
+      <button style="flex:1;padding:8px;border:0.5px solid var(--border-primary);border-radius:var(--radius-sm);background:var(--bg-primary);font-size:11px;font-family:inherit;cursor:pointer;color:var(--text-secondary)" onclick="sr_cancel('${key}')">✕ Cancel</button>
+      <button style="flex:2;padding:8px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:11px;font-family:inherit;cursor:pointer;font-weight:600" onclick="sr_confirm('${key}')">✓ Confirm &amp; Fill Forms (${receiptScanItems.length} item${receiptScanItems.length!==1?'s':''})</button>
+    </div>`;
+}
+
+function sr_cancel(key){
+  receiptScanItems=[];receiptScanIdx=0;
+  const sr=document.getElementById('sr-stock-'+key);
+  if(sr)sr.style.display='none';
+}
+
+function sr_confirm(key){
+  // Save any edits from preview fields back into receiptScanItems
+  receiptScanItems=receiptScanItems.map((it,i)=>{
+    const nameEl=document.getElementById('rsp-name-'+key+'-'+i);
+    const qtyEl=document.getElementById('rsp-qty-'+key+'-'+i);
+    const unitEl=document.getElementById('rsp-unit-'+key+'-'+i);
+    const costEl=document.getElementById('rsp-cost-'+key+'-'+i);
+    const name=nameEl?nameEl.value.trim():it.name;
+    return{
+      name,
+      qty:qtyEl?parseFloat(qtyEl.value)||it.qty:it.qty,
+      unit:unitEl?unitEl.value.trim()||it.unit:it.unit,
+      cost:costEl?parseFloat(costEl.value)||0:it.cost,
+      isRestock:(BIZ_STOCKS[key]||[]).some(s=>s.name.toLowerCase()===name.toLowerCase())
+    };
+  }).filter(it=>it.name);
+  receiptScanIdx=0;
+  const sr=document.getElementById('sr-stock-'+key);
+  if(sr)sr.style.display='none';
+  fillReceiptItemToForm(key);
+}
+
+function fillReceiptItemToForm(key){
+  if(receiptScanIdx>=receiptScanItems.length){
+    receiptScanItems=[];receiptScanIdx=0;
+    const banner=document.getElementById('receipt-banner-'+key);
+    if(banner)banner.remove();
+    toast('All scanned items processed ✓','ok');
+    return;
+  }
+  const it=receiptScanItems[receiptScanIdx];
+
+  // Fill name field
+  const nameEl=document.getElementById('sn-'+key);
+  if(nameEl)nameEl.value=it.name;
+
+  // Check existing
+  const existing=(BIZ_STOCKS[key]||[]).find(s=>s.name.toLowerCase()===it.name.toLowerCase());
+  if(existing){
+    fillStockAC(key,it.name);
+  } else {
+    // New item — set unit from scan if valid, else default pc
+    const unitKey=Object.keys(UNITS).find(u=>u.toLowerCase()===it.unit.toLowerCase());
+    stockUnitSel[key]=unitKey||'pc';
+    const label=document.getElementById('udd-label-'+key);
+    if(label)label.textContent=UNITS[stockUnitSel[key]]?.label||stockUnitSel[key];
+    onStockUnitChange(key);
+    // Close spec box if open
+    const specBody=document.getElementById('spec-body-'+key);
+    if(specBody&&specBody.style.display!=='none')toggleSpecBox(key);
+  }
+
+  // Fill qty
+  const qtyEl=document.getElementById('sq-'+key);
+  if(qtyEl)qtyEl.value=it.qty;
+
+  // Fill cost if available
+  const costEl=document.getElementById('sc-'+key);
+  if(costEl)costEl.value=it.cost>0?it.cost:'';
+
+  stockCostHint(key);
+
+  // Show/update progress banner
+  showReceiptBanner(key);
+
+  // Scroll to top
+  const ts=document.querySelector('.tab-scroll');
+  if(ts)ts.scrollTop=0;
+}
+
+function showReceiptBanner(key){
+  const bannerId='receipt-banner-'+key;
+  const it=receiptScanItems[receiptScanIdx];
+  if(!it)return;
+  const total=receiptScanItems.length;
+  const current=receiptScanIdx+1;
+  const tagHtml=it.isRestock
+    ?`<span style="background:var(--accent-light);color:var(--accent);border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">RESTOCK</span>`
+    :`<span style="background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;font-size:9px;font-weight:700">NEW — fill unit &amp; cost</span>`;
+  const backBtn=receiptScanIdx>0?`<button onclick="receiptScanIdx--;fillReceiptItemToForm('${key}')" style="flex:1;padding:5px 0;border:0.5px solid var(--border-primary);border-radius:5px;background:var(--bg-primary);font-size:10px;font-family:inherit;cursor:pointer;color:var(--text-secondary)">← Back</button>`:'';
+  const html=`<div id="${bannerId}" style="background:var(--accent-light);border:0.5px solid var(--accent);border-radius:var(--radius-sm);padding:9px 11px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+      <div style="font-size:10px;font-weight:700;color:var(--accent)">📋 Receipt — ${current} of ${total}</div>
+      <button onclick="cancelReceiptFlow('${key}')" style="background:none;border:none;color:var(--text-tertiary);font-size:11px;cursor:pointer;padding:0">✕ Cancel</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:6px">
+      ${tagHtml}
+      <span style="font-size:11px;font-weight:600;color:var(--text-primary)">${it.name}</span>
+      <span style="font-size:10px;color:var(--text-tertiary)">· ${it.qty} ${it.unit}${it.cost>0?' · ₱'+it.cost.toFixed(2):''}</span>
+    </div>
+    <div style="display:flex;gap:5px">
+      ${backBtn}
+      <button onclick="skipReceiptItem('${key}')" style="flex:1;padding:5px 0;border:0.5px solid var(--border-primary);border-radius:5px;background:var(--bg-primary);font-size:10px;font-family:inherit;cursor:pointer;color:var(--text-secondary)">Skip</button>
+      <div style="flex:1;font-size:9px;color:var(--text-tertiary);text-align:center;padding:5px 0;line-height:1.3">${total-current} left after this</div>
+    </div>
+  </div>`;
+  const existing=document.getElementById(bannerId);
+  if(existing){existing.outerHTML=html;}
+  else{
+    const addSection=document.getElementById('sn-'+key)?.closest('.cb');
+    if(addSection)addSection.insertAdjacentHTML('afterbegin',html);
+  }
+}
+
+function skipReceiptItem(key){
+  // Clear form fields
+  ['sn-'+key,'sq-'+key,'sc-'+key,'sl-'+key].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const specBody=document.getElementById('spec-body-'+key);
+  if(specBody&&specBody.style.display!=='none')toggleSpecBox(key);
+  stockCostHint(key);
+  receiptScanIdx++;
+  fillReceiptItemToForm(key);
+}
+
+function cancelReceiptFlow(key){
+  receiptScanItems=[];receiptScanIdx=0;
+  const banner=document.getElementById('receipt-banner-'+key);
+  if(banner)banner.remove();
+  ['sn-'+key,'sq-'+key,'sc-'+key,'sl-'+key].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  toast('Receipt scan cancelled','ok');
+}
+
+function advanceReceiptFlow(key){
+  if(!receiptScanItems.length)return;
+  receiptScanIdx++;
+  // Reset sell toggle if on
+  const sellToggle=document.getElementById('sell-toggle-'+key);
+  if(sellToggle&&sellToggle.classList.contains('on'))toggleAddToSell(key);
+  // Clear cost/qty fields
+  ['sq-'+key,'sc-'+key].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  fillReceiptItemToForm(key);
+}
+
 function applyScanned(ctx){
+  // Expense path only — stock now uses receipt flow
   const isExp=ctx.startsWith('exp-');
-  const key=ctx.replace('stock-','').replace('exp-','');
+  if(!isExp)return;
+  const key=ctx.replace('exp-','');
   const si=document.getElementById('si-'+ctx);
   if(!si)return;
   const rows=si.querySelectorAll('.scan-edit-row');
@@ -6060,33 +6322,13 @@ function applyScanned(ctx){
     const name=document.getElementById('sn-'+i)?.value.trim();
     const val=parseFloat(document.getElementById('sq-'+i)?.value)||0;
     if(!name||val<=0)return;
-    if(isExp){
-      if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
-      BIZ_EXPLOGS[key].push({id:uid(),desc:name,amount:val,cat:'Supplies',time:ts(),dateKey:dateKey()});
-    } else {
-      if(!BIZ_STOCKS[key])BIZ_STOCKS[key]=[];
-      if(!BIZ_STOCKLOGS[key])BIZ_STOCKLOGS[key]=[];
-      const qty=val;
-      const existingBatches=BIZ_STOCKS[key].filter(function(s){return s.name.toLowerCase()===name.toLowerCase();});
-      const first=existingBatches[0];
-      const stockUnit=first?first.stockUnit||'pc':'pc';
-      if(existingBatches.length>0){
-        const nb={id:uid(),name,qty,stockUnit,cost:0,low:first.low||2,lowUnit:first.lowUnit||stockUnit};
-        if(first.specAmt>0){nb.specAmt=first.specAmt;nb.specBaseUnit=first.specBaseUnit;}
-        BIZ_STOCKS[key].push(nb);
-      } else {
-        BIZ_STOCKS[key].push({id:uid(),name,qty,stockUnit:'pc',cost:0,low:2,lowUnit:'pc'});
-      }
-      BIZ_STOCKLOGS[key].push({id:uid(),stockName:name,qty,stockUnit,totalCost:0,costPerUnit:0,
-        specAmt:first?first.specAmt||0:0,specBaseUnit:first?first.specBaseUnit||'':"",
-        time:ts(),dateKey:dateKey(),note:'via scan — update cost in Stock tab'});
-    }
+    if(!BIZ_EXPLOGS[key])BIZ_EXPLOGS[key]=[];
+    BIZ_EXPLOGS[key].push({id:uid(),desc:name,amount:val,cat:'Supplies',time:ts(),dateKey:dateKey()});
     count++;
   });
   document.getElementById('sr-'+ctx).style.display='none';
   saveData();render();
-  const note=isExp?'':' · ⚠️ Update costs via ✏️ in Stock tab';
-  setTimeout(function(){toast(count+' item(s) saved ✓'+note);},50);
+  setTimeout(function(){toast(count+' expense(s) saved ✓');},50);
 }
 function updateClock(){const el=document.getElementById('posClock');if(el)el.textContent=new Date().toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});}
 
