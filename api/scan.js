@@ -1,11 +1,13 @@
 
-// Simple in-memory rate limiter (per serverless instance)
+export const config = { runtime: 'edge' };
+ 
+// Simple rate limiting using a Map (per edge instance)
 const rateLimitMap = new Map();
  
 function isRateLimited(ip) {
   const now = Date.now();
-  const windowMs = 60 * 1000; // 1 minute window
-  const maxRequests = 10; // max 10 scans per minute per IP
+  const windowMs = 60 * 1000;
+  const maxRequests = 10;
  
   if (!rateLimitMap.has(ip)) {
     rateLimitMap.set(ip, { count: 1, start: now });
@@ -13,69 +15,52 @@ function isRateLimited(ip) {
   }
  
   const entry = rateLimitMap.get(ip);
- 
-  // Reset window if expired
   if (now - entry.start > windowMs) {
     rateLimitMap.set(ip, { count: 1, start: now });
     return false;
   }
  
-  // Increment and check
   entry.count++;
-  if (entry.count > maxRequests) {
-    return true; // rate limited
-  }
- 
-  return false;
+  return entry.count > maxRequests;
 }
  
-// Clean up old entries every 100 requests to prevent memory bloat
-let cleanupCounter = 0;
-function cleanupRateLimit() {
-  cleanupCounter++;
-  if (cleanupCounter % 100 === 0) {
-    const now = Date.now();
-    for (const [ip, entry] of rateLimitMap.entries()) {
-      if (now - entry.start > 60 * 1000) {
-        rateLimitMap.delete(ip);
-      }
-    }
-  }
-}
- 
-export default async function handler(req, res) {
+export default async function handler(req) {
   // Only allow POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405, headers: { 'Content-Type': 'application/json' }
+    });
   }
  
-  // Get client IP
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-    || req.headers['x-real-ip']
-    || req.socket?.remoteAddress
-    || 'unknown';
- 
-  // Rate limit check
-  cleanupRateLimit();
+  // Rate limit
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
   if (isRateLimited(ip)) {
-    return res.status(429).json({ error: 'Too many requests. Please wait a moment before scanning again.' });
+    return new Response(JSON.stringify({ error: 'Too many requests. Please wait a moment.' }), {
+      status: 429, headers: { 'Content-Type': 'application/json' }
+    });
   }
  
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: 'API key not configured on server' });
+    return new Response(JSON.stringify({ error: 'API key not configured on server' }), {
+      status: 500, headers: { 'Content-Type': 'application/json' }
+    });
   }
  
   try {
-    const { imageBase64, mimeType } = req.body;
+    const { imageBase64, mimeType } = await req.json();
  
     if (!imageBase64) {
-      return res.status(400).json({ error: 'No image data provided' });
+      return new Response(JSON.stringify({ error: 'No image data provided' }), {
+        status: 400, headers: { 'Content-Type': 'application/json' }
+      });
     }
  
-    // Payload size check — reject if image is over 10MB base64
+    // Payload size check — reject if over 10MB
     if (imageBase64.length > 10 * 1024 * 1024) {
-      return res.status(413).json({ error: 'Image too large. Please use a smaller photo.' });
+      return new Response(JSON.stringify({ error: 'Image too large. Please use a smaller photo.' }), {
+        status: 413, headers: { 'Content-Type': 'application/json' }
+      });
     }
  
     const prompt = `You are a stock inventory assistant. Extract all stock items from this receipt or stock list image. For each item return: name (string), qty (number), unit (string like pc/ream/box/bottle/sack/kg/g/L/ml), cost (total price paid for that line item as a number, 0 if not visible). Return ONLY a valid JSON array, no extra text: [{"name":"item name","qty":1,"unit":"pc","cost":0}]`;
@@ -100,17 +85,23 @@ export default async function handler(req, res) {
     const data = await response.json();
  
     if (data.error) {
-      return res.status(500).json({ error: data.error.message });
+      return new Response(JSON.stringify({ error: data.error.message }), {
+        status: 500, headers: { 'Content-Type': 'application/json' }
+      });
     }
  
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = raw.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(clean);
  
-    return res.status(200).json({ items: parsed });
+    return new Response(JSON.stringify({ items: parsed }), {
+      status: 200, headers: { 'Content-Type': 'application/json' }
+    });
  
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to process image: ' + err.message });
+    return new Response(JSON.stringify({ error: 'Failed to process image: ' + err.message }), {
+      status: 500, headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
  
